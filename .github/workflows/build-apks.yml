@@ -1,8 +1,10 @@
-name: Build Verve APKs (Alpha, Beta, Stable)
+name: Build Verve APK (Alpha, Beta, Stable)
 
 on:
   push:
     branches:
+      - alpha
+      - beta
       - main
     tags:
       - "v*"
@@ -13,7 +15,7 @@ permissions:
 
 jobs:
   build-apks:
-    name: Build Release APKs
+    name: Build Release APK
     runs-on: ubuntu-latest
 
     steps:
@@ -56,26 +58,24 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
-      - name: Build Alpha, Beta, and Stable Release APKs
+      - name: Build Release APK
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-        run: ./gradlew assembleAlphaRelease assembleBetaRelease assembleStableRelease
+        run: ./gradlew assembleRelease
 
-      - name: Collect APKs
+      - name: Collect APK
         run: |
           mkdir -p release-apks
-          cp app/build/outputs/apk/alpha/release/*.apk release-apks/
-          cp app/build/outputs/apk/beta/release/*.apk release-apks/
-          cp app/build/outputs/apk/stable/release/*.apk release-apks/
+          cp app/build/outputs/apk/release/*.apk release-apks/
           ls -lh release-apks/
 
-      - name: Upload APKs as Workflow Artifacts
+      - name: Upload APK as Workflow Artifact
         uses: actions/upload-artifact@v7
         with:
-          name: verve-apks-${{ github.run_number }}
+          name: verve-apk-${{ github.run_number }}
           path: release-apks/*.apk
           if-no-files-found: error
 
