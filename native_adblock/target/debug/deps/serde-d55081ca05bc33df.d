@@ -1,0 +1,14 @@
+/home/knoight/StudioProjects/VerveBrowser/native_adblock/target/debug/deps/serde-d55081ca05bc33df.d: /home/knoight/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.229/src/lib.rs /home/knoight/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.229/src/integer128.rs /home/knoight/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.229/src/private/mod.rs /home/knoight/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.229/src/private/de.rs /home/knoight/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.229/src/private/ser.rs /home/knoight/StudioProjects/VerveBrowser/native_adblock/target/debug/build/serde-ba8426c877a92a17/out/private.rs
+
+/home/knoight/StudioProjects/VerveBrowser/native_adblock/target/debug/deps/libserde-d55081ca05bc33df.rlib: /home/knoight/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.229/src/lib.rs /home/knoight/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.229/src/integer128.rs /home/knoight/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.229/src/private/mod.rs /home/knoight/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.229/src/private/de.rs /home/knoight/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.229/src/private/ser.rs /home/knoight/StudioProjects/VerveBrowser/native_adblock/target/debug/build/serde-ba8426c877a92a17/out/private.rs
+
+/home/knoight/StudioProjects/VerveBrowser/native_adblock/target/debug/deps/libserde-d55081ca05bc33df.rmeta: /home/knoight/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.229/src/lib.rs /home/knoight/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.229/src/integer128.rs /home/knoight/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.229/src/private/mod.rs /home/knoight/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.229/src/private/de.rs /home/knoight/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.229/src/private/ser.rs /home/knoight/StudioProjects/VerveBrowser/native_adblock/target/debug/build/serde-ba8426c877a92a17/out/private.rs
+
+/home/knoight/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.229/src/lib.rs:
+/home/knoight/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.229/src/integer128.rs:
+/home/knoight/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.229/src/private/mod.rs:
+/home/knoight/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.229/src/private/de.rs:
+/home/knoight/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.229/src/private/ser.rs:
+/home/knoight/StudioProjects/VerveBrowser/native_adblock/target/debug/build/serde-ba8426c877a92a17/out/private.rs:
+
+# env-dep:OUT_DIR=/home/knoight/StudioProjects/VerveBrowser/native_adblock/target/debug/build/serde-ba8426c877a92a17/out

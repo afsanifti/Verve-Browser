@@ -1,0 +1,11 @@
+[package]
+name = "verve_adblock"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+adblock = { git = "https://github.com/brave/adblock-rust", branch = "master" }
+jni = "0.21"
