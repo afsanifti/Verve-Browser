@@ -1,31 +1,53 @@
-# Built application files & outputs
+# Built application files
 *.apk
 *.aar
+*.ap_
 *.aab
-build/
-*/build/
 
-# Gradle & Kotlin build caches
-.gradle/
+# ART / Dalvik VM files
+*.dex
+
+# Java & Kotlin compiled/cache files
+*.class
 .kotlin/
 
-# Local configuration files
+# Generated & build directories
+bin/
+gen/
+out/
+build/
+**/build/
+
+# Gradle
+.gradle/
+!gradle/wrapper/gradle-wrapper.jar
+
+# Local environment & signing secrets
 local.properties
-
-# Android Studio & IntelliJ files
-.idea/workspace.xml
-.idea/tasks.xml
-.idea/gradle.xml
-.idea/assetWizardSettings.xml
-.idea/dictionaries
-.idea/libraries
-.idea/caches
-*.iml
-
-# App signing keystores
+keystore.properties
 *.jks
 *.keystore
 
-# Operating system files
+# Android Studio & IntelliJ IDEA
+*.iml
+.idea/
+
+# Android Profiler & captures
+captures/
+*.hprof
+
+# NDK / Native builds
+.externalNativeBuild/
+.cxx/
+obj/
+
+# Logs & temporary files
+*.log
+*~
+*.swp
+*.swo
+
+# OS-specific files
 .DS_Store
 Thumbs.db
+Desktop.ini
