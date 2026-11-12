@@ -1,0 +1,86 @@
+name: Build Verve APKs (Alpha, Beta, Stable)
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-apks:
+    name: Build Release APKs
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,x86_64-linux-android
+
+      - name: Install cargo-ndk
+        uses: taiki-e/install-action@cargo-ndk
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: native_adblock
+
+      - name: Compile native_adblock (.so libraries)
+        working-directory: native_adblock
+        run: |
+          cargo ndk \
+            -t arm64-v8a \
+            -t x86_64 \
+            -o ../app/src/main/jniLibs \
+            build --release
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      - name: Build Alpha, Beta, and Stable Release APKs
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: ./gradlew assembleAlphaRelease assembleBetaRelease assembleStableRelease
+
+      - name: Collect APKs
+        run: |
+          mkdir -p release-apks
+          cp app/build/outputs/apk/alpha/release/*.apk release-apks/
+          cp app/build/outputs/apk/beta/release/*.apk release-apks/
+          cp app/build/outputs/apk/stable/release/*.apk release-apks/
+          ls -lh release-apks/
+
+      - name: Upload APKs as Workflow Artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: verve-apks-${{ github.run_number }}
+          path: release-apks/*.apk
+          if-no-files-found: error
+
+      - name: Publish GitHub Release on Tag Push
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v3
+        with:
+          files: release-apks/*.apk
+          generate_release_notes: true
+          prerelease: ${{ contains(github.ref, 'alpha') || contains(github.ref, 'beta') }}

@@ -41,6 +41,10 @@ captures/
 .cxx/
 obj/
 
+# Native Rust & auto-generated JNI binaries
+**/target/
+app/src/main/jniLibs/
+
 # Logs & temporary files
 *.log
 *~
