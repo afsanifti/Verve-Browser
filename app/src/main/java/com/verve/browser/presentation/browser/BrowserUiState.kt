@@ -11,7 +11,7 @@ data class BrowserUiState(
     val siteSeedColor: Color? = null,
     val topRegionColor: Color? = null,
     val bottomRegionColor: Color? = null,
-    val isAtPageBottom: Boolean = false,
+    val bottomCurtainProgress: Float = 0f,
     val isPageReadyToReveal: Boolean = false,
     val isToolbarCollapsed: Boolean = false,
     val isLoading: Boolean = false,
@@ -20,6 +20,9 @@ data class BrowserUiState(
     val canGoBack: Boolean = false,
     val canGoForward: Boolean = false
 ) {
+    val isAtPageBottom: Boolean
+        get() = bottomCurtainProgress >= 0.99f
+
     companion object {
         val DEFAULT_SEARCH_SUGGESTIONS = listOf(
             "wikipedia.org",

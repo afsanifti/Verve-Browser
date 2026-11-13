@@ -22,7 +22,7 @@ data class WebEdgeProbeResult(
 
 object WebEdgeColorExtractor {
 
-    private const val MAX_PAYLOAD_LENGTH = 640
+    private const val MAX_PAYLOAD_LENGTH = 768
 
     private val EDGE_COLOR_PROBE_JS = """
         (() => {
@@ -48,6 +48,21 @@ object WebEdgeColorExtractor {
                         Math.max(0, Math.min(255, parseFloat(m[3]) || 0)),
                         m[4] !== undefined ? Math.max(0, Math.min(1, parseFloat(m[4]))) : 1
                     ];
+                };
+
+                const compositeLayers = (layers) => {
+                    let r = 0, g = 0, b = 0, a = 0;
+                    for (let i = layers.length - 1; i >= 0; i--) {
+                        const [lr, lg, lb, la] = layers[i];
+                        const outA = la + a * (1 - la);
+                        if (outA > 0) {
+                            r = (lr * la + r * a * (1 - la)) / outA;
+                            g = (lg * la + g * a * (1 - la)) / outA;
+                            b = (lb * la + b * a * (1 - la)) / outA;
+                            a = outA;
+                        }
+                    }
+                    return a >= 0.2 ? [Math.round(r), Math.round(g), Math.round(b)] : null;
                 };
 
                 const samplePoint = (x, y) => {
@@ -87,27 +102,22 @@ object WebEdgeColorExtractor {
                         }
                     }
 
-                    let r = 0, g = 0, b = 0, a = 0;
-                    for (let i = layers.length - 1; i >= 0; i--) {
-                        const [lr, lg, lb, la] = layers[i];
-                        const outA = la + a * (1 - la);
-                        if (outA > 0) {
-                            r = (lr * la + r * a * (1 - la)) / outA;
-                            g = (lg * la + g * a * (1 - la)) / outA;
-                            b = (lb * la + b * a * (1 - la)) / outA;
-                            a = outA;
-                        }
-                    }
-
+                    const rgb = compositeLayers(layers);
                     return {
-                        rgb: a >= 0.2 ? [Math.round(r), Math.round(g), Math.round(b)] : null,
-                        opaque: a >= 0.95,
+                        rgb,
+                        opaque: accAlpha >= 0.95,
                         complex: isComplex
                     };
                 };
 
                 const sampleEdge = (y) => {
-                    const xs = [Math.floor(w * 0.15), Math.floor(w * 0.5), Math.floor(w * 0.85)];
+                    const xs = [
+                        Math.floor(w * 0.10),
+                        Math.floor(w * 0.30),
+                        Math.floor(w * 0.50),
+                        Math.floor(w * 0.70),
+                        Math.floor(w * 0.90)
+                    ];
                     const samples = xs.map(x => samplePoint(x, y));
                     const complex = samples.some(s => s.complex);
                     const valid = samples.filter(s => s.rgb !== null);
@@ -122,9 +132,9 @@ object WebEdgeColorExtractor {
                             const dist = Math.abs(valid[i].rgb[0] - valid[j].rgb[0]) +
                                          Math.abs(valid[i].rgb[1] - valid[j].rgb[1]) +
                                          Math.abs(valid[i].rgb[2] - valid[j].rgb[2]);
-                            if (dist < 24) score++;
+                            if (dist < 20) score++;
                         }
-                        if (score > bestScore || (score === bestScore && i === 1)) {
+                        if (score > bestScore || (score === bestScore && i === 2)) {
                             bestScore = score;
                             best = valid[i];
                         }
@@ -132,8 +142,51 @@ object WebEdgeColorExtractor {
                     return { rgb: best.rgb, opaque: best.opaque, complex };
                 };
 
+                // Pre-resolve the webpage's true footer background before it scrolls into view
+                const resolveDocumentFooter = () => {
+                    const candidates = [];
+                    const footers = document.querySelectorAll('footer, [role="contentinfo"]');
+                    for (let i = 0; i < footers.length; i++) {
+                        const rect = footers[i].getBoundingClientRect();
+                        if (rect.width >= w * 0.7 && rect.height >= 16) {
+                            candidates.push({ el: footers[i], bottom: sy + rect.bottom });
+                        }
+                    }
+                    if (candidates.length === 0 && document.body) {
+                        const children = document.body.children;
+                        for (let i = children.length - 1; i >= 0; i--) {
+                            const rect = children[i].getBoundingClientRect();
+                            if (rect.width >= w * 0.7 && rect.height >= 16) {
+                                candidates.push({ el: children[i], bottom: sy + rect.bottom });
+                                break;
+                            }
+                        }
+                    }
+                    if (candidates.length === 0) return null;
+                    candidates.sort((a, b) => b.bottom - a.bottom);
+                    let cur = candidates[0].el;
+                    const layers = [];
+                    let accAlpha = 0;
+                    while (cur && cur.nodeType === 1) {
+                        const style = window.getComputedStyle(cur);
+                        if (style && style.display !== 'none' && style.visibility !== 'hidden') {
+                            const opacity = Math.max(0, Math.min(1, parseFloat(style.opacity)));
+                            const bg = parseRgba(style.backgroundColor);
+                            const effA = bg[3] * opacity;
+                            if (effA > 0.01) {
+                                layers.push([bg[0], bg[1], bg[2], effA]);
+                                accAlpha = accAlpha + effA * (1 - accAlpha);
+                                if (accAlpha >= 0.985) break;
+                            }
+                        }
+                        cur = cur.parentElement;
+                    }
+                    return compositeLayers(layers);
+                };
+
                 const top = sampleEdge(Math.min(3, Math.max(0, h - 1)));
                 const bottom = sampleEdge(Math.max(0, h - 3));
+                const footerRgb = resolveDocumentFooter();
 
                 const metaTheme = document.querySelector('meta[name="theme-color"]');
                 const themeColor = metaTheme ? (metaTheme.getAttribute('content') || '').trim().slice(0, 32) : '';
@@ -145,6 +198,7 @@ object WebEdgeColorExtractor {
                     b: bottom.rgb,
                     bo: bottom.opaque,
                     bc: bottom.complex,
+                    f: footerRgb,
                     m: themeColor,
                     vh: h,
                     sh: sh,
@@ -158,6 +212,7 @@ object WebEdgeColorExtractor {
 
     fun extractEdgeProbe(
         webView: WebView?,
+        isApproachingBottom: Boolean = false,
         onResult: (WebEdgeProbeResult) -> Unit
     ) {
         val view = webView ?: return
@@ -166,13 +221,17 @@ object WebEdgeColorExtractor {
         runCatching {
             view.evaluateJavascript(EDGE_COLOR_PROBE_JS) { rawResult ->
                 if (!view.isAttachedToWindow) return@evaluateJavascript
-                val parsed = parseProbeResponse(view, rawResult)
+                val parsed = parseProbeResponse(view, rawResult, isApproachingBottom)
                 onResult(parsed)
             }
         }
     }
 
-    private fun parseProbeResponse(webView: WebView, rawResult: String?): WebEdgeProbeResult {
+    private fun parseProbeResponse(
+        webView: WebView,
+        rawResult: String?,
+        isApproachingBottom: Boolean
+    ): WebEdgeProbeResult {
         if (rawResult.isNullOrBlank() || rawResult == "null" || rawResult == "\"null\"") {
             return sampleFallbackStrips(
                 webView = webView,
@@ -199,10 +258,10 @@ object WebEdgeColorExtractor {
             val domBottom = parseRgbArray(json.optJSONArray("b"))
             val bottomOpaque = json.optBoolean("bo", false)
             val bottomComplex = json.optBoolean("bc", false)
+            val footerRgb = parseRgbArray(json.optJSONArray("f"))
 
             val metaTheme = parseCssColorHex(json.optString("m", ""))
 
-            // Normalize CSS pixels to WebView view pixels using exact viewport ratio
             val cssVh = json.optDouble("vh", 0.0)
             val cssSh = json.optDouble("sh", 0.0)
             val cssSy = json.optDouble("sy", 0.0)
@@ -217,8 +276,15 @@ object WebEdgeColorExtractor {
                 null
             }
 
+            val resolvedDomBottom = if (isApproachingBottom && footerRgb != null) {
+                footerRgb
+            } else {
+                domBottom ?: footerRgb
+            }
+
             val needTopStrip = topComplex || !topOpaque || domTop == null
-            val needBottomStrip = bottomComplex || !bottomOpaque || domBottom == null
+            val needBottomStrip = (!isApproachingBottom || footerRgb == null) &&
+                    (bottomComplex || !bottomOpaque || resolvedDomBottom == null)
 
             if (needTopStrip || needBottomStrip) {
                 sampleFallbackStrips(
@@ -226,14 +292,14 @@ object WebEdgeColorExtractor {
                     needTop = needTopStrip,
                     needBottom = needBottomStrip,
                     domTop = domTop,
-                    domBottom = domBottom,
+                    domBottom = resolvedDomBottom,
                     metaTheme = metaTheme,
                     scrollMetrics = scrollMetrics
                 )
             } else {
                 WebEdgeProbeResult(
                     topColor = domTop,
-                    bottomColor = domBottom,
+                    bottomColor = resolvedDomBottom,
                     scrollMetrics = scrollMetrics
                 )
             }
@@ -369,7 +435,7 @@ object WebEdgeColorExtractor {
         return trimmed
     }
 
-    fun isPerceptuallySimilar(a: Color?, b: Color?, threshold: Int = 12): Boolean {
+    fun isPerceptuallySimilar(a: Color?, b: Color?, threshold: Int = 10): Boolean {
         if (a == null || b == null) return a == b
         val dr = abs((a.red * 255f).roundToInt() - (b.red * 255f).roundToInt())
         val dg = abs((a.green * 255f).roundToInt() - (b.green * 255f).roundToInt())

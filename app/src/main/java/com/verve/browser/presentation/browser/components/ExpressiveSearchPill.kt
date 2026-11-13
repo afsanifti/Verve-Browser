@@ -1,15 +1,11 @@
 package com.verve.browser.presentation.browser.components
 
-import android.net.Uri
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.animateDpAsState
-import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -40,8 +36,10 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.PathParser
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -49,7 +47,9 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.lerp
 import androidx.compose.ui.unit.sp
+import androidx.core.net.toUri
 import com.verve.browser.presentation.browser.util.DropShadow
 
 @Composable
@@ -61,6 +61,7 @@ fun ExpressiveSearchPill(
     currentUrl: String = "",
     isWebMode: Boolean = false,
     isCollapsed: Boolean = false,
+    expandProgress: Float? = null,
     onFocusChanged: (Boolean) -> Unit = {},
     onExpandClick: () -> Unit = {},
     onSiteSettingsClick: () -> Unit = {},
@@ -68,20 +69,22 @@ fun ExpressiveSearchPill(
 ) {
     val focusManager = LocalFocusManager.current
     val focusRequester = remember { FocusRequester() }
+    val density = LocalDensity.current
     var isEditingUrl by remember(isWebMode) { mutableStateOf(false) }
     var hasGainedFocus by remember(isEditingUrl) { mutableStateOf(false) }
 
     val effectiveCollapsed = isWebMode && isCollapsed && !isEditingUrl
     val containerColor = MaterialTheme.colorScheme.primaryContainer
 
-    val pillHeight by animateDpAsState(
-        targetValue = if (effectiveCollapsed) 38.dp else 72.dp,
-        animationSpec = spring(
-            dampingRatio = 0.82f,
-            stiffness = Spring.StiffnessMediumLow
-        ),
-        label = "pillHeight"
+    val internalExpandProgress by animateFloatAsState(
+        targetValue = if (effectiveCollapsed) 0f else 1f,
+        animationSpec = ExpressiveToolbarQuickSpring,
+        label = "pillExpandProgress"
     )
+    val resolvedExpand = (expandProgress ?: internalExpandProgress).coerceAtLeast(0f)
+    val clampedExpand = resolvedExpand.coerceIn(0f, 1f)
+    val pillHeight = lerp(38.dp, 72.dp, resolvedExpand.coerceIn(0f, 1.03f))
+    val iconSlidePx = with(density) { 10.dp.toPx() }
 
     val submitAction = {
         if (inputText.isNotBlank()) {
@@ -106,38 +109,26 @@ fun ExpressiveSearchPill(
         color = containerColor,
         shadowElevation = 0.dp
     ) {
-        if (effectiveCollapsed) {
-            Box(
-                modifier = Modifier
-                    .fillMaxHeight()
-                    .clickable(
-                        interactionSource = remember { MutableInteractionSource() },
-                        indication = null,
-                        onClick = onExpandClick
-                    )
-                    .padding(horizontal = 20.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = extractDisplayDomain(currentUrl),
-                    style = TextStyle(
-                        color = MaterialTheme.colorScheme.onPrimaryContainer,
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        textAlign = TextAlign.Center
-                    ),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
-        } else if (isWebMode && !isEditingUrl) {
-            Row(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(horizontal = 8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                IconButton(onClick = onSiteSettingsClick) {
+        if (isWebMode && !isEditingUrl) {
+            val iconProgress = ((clampedExpand - 0.30f) / 0.70f).coerceIn(0f, 1f)
+            val iconScale = 0.68f + 0.32f * iconProgress
+            val domainHorizontalPadding = lerp(18.dp, 54.dp, clampedExpand)
+            val domainFontSize = lerp(13.sp, 17.sp, clampedExpand)
+
+            Box(modifier = Modifier.fillMaxSize()) {
+                IconButton(
+                    onClick = onSiteSettingsClick,
+                    enabled = iconProgress > 0.65f,
+                    modifier = Modifier
+                        .align(Alignment.CenterStart)
+                        .padding(start = 8.dp)
+                        .graphicsLayer {
+                            alpha = iconProgress
+                            scaleX = iconScale
+                            scaleY = iconScale
+                            translationX = -iconSlidePx * (1f - iconProgress)
+                        }
+                ) {
                     Icon(
                         imageVector = TuneVectorIcon,
                         contentDescription = "Site Settings",
@@ -148,14 +139,18 @@ fun ExpressiveSearchPill(
 
                 Box(
                     modifier = Modifier
-                        .weight(1f)
-                        .fillMaxHeight()
+                        .fillMaxSize()
+                        .padding(horizontal = domainHorizontalPadding)
                         .clickable(
                             interactionSource = remember { MutableInteractionSource() },
                             indication = null
                         ) {
-                            onInputTextChange(currentUrl)
-                            isEditingUrl = true
+                            if (clampedExpand < 0.5f) {
+                                onExpandClick()
+                            } else {
+                                onInputTextChange(currentUrl)
+                                isEditingUrl = true
+                            }
                         },
                     contentAlignment = Alignment.Center
                 ) {
@@ -163,8 +158,8 @@ fun ExpressiveSearchPill(
                         text = extractDisplayDomain(currentUrl),
                         style = TextStyle(
                             color = MaterialTheme.colorScheme.onPrimaryContainer,
-                            fontSize = 17.sp,
-                            fontWeight = FontWeight.Medium,
+                            fontSize = domainFontSize,
+                            fontWeight = if (clampedExpand < 0.5f) FontWeight.SemiBold else FontWeight.Medium,
                             textAlign = TextAlign.Center
                         ),
                         maxLines = 1,
@@ -172,7 +167,19 @@ fun ExpressiveSearchPill(
                     )
                 }
 
-                IconButton(onClick = onRefreshClick) {
+                IconButton(
+                    onClick = onRefreshClick,
+                    enabled = iconProgress > 0.65f,
+                    modifier = Modifier
+                        .align(Alignment.CenterEnd)
+                        .padding(end = 8.dp)
+                        .graphicsLayer {
+                            alpha = iconProgress
+                            scaleX = iconScale
+                            scaleY = iconScale
+                            translationX = iconSlidePx * (1f - iconProgress)
+                        }
+                ) {
                     Icon(
                         imageVector = Icons.Rounded.Refresh,
                         contentDescription = "Reload Page",
@@ -245,9 +252,9 @@ fun ExpressiveSearchPill(
     }
 }
 
-private fun extractDisplayDomain(url: String): String {
+internal fun extractDisplayDomain(url: String): String {
     return runCatching {
-        val host = Uri.parse(url).host
+        val host = url.toUri().host
         if (!host.isNullOrBlank()) {
             host.removePrefix("www.")
         } else {

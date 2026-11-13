@@ -37,7 +37,6 @@ import kotlin.math.roundToInt
 fun VerveWebView(
     url: String,
     viewModel: BrowserViewModel,
-    floorHeightPx: Int,
     onWebViewCreated: (WebView) -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -48,7 +47,6 @@ fun VerveWebView(
         modifier = modifier,
         factory = { context ->
             WebView(context).apply {
-                // Prevent WebView from applying system statusBar/cutout insets a second time
                 ViewCompat.setOnApplyWindowInsetsListener(this) { _, _ ->
                     WindowInsetsCompat.CONSUMED
                 }
@@ -67,16 +65,13 @@ fun VerveWebView(
 
                 var accumulatedScrollDy = 0
                 val scrollThresholdPx = (24 * context.resources.displayMetrics.density).toInt()
-                var isCompensatingFloorScroll = false
 
-                setOnScrollChangeListener { _, _, scrollY, _, oldScrollY ->
-                    if (isCompensatingFloorScroll) return@setOnScrollChangeListener
-
-                    val dy = scrollY - oldScrollY
-                    bottomCoordinator.onScrollChanged(scrollY = scrollY, dy = dy)
+                setOnScrollChangeListener { _, _, verticalScrollOffset, _, oldVerticalScrollOffset ->
+                    val dy = verticalScrollOffset - oldVerticalScrollOffset
+                    bottomCoordinator.onScrollChanged(verticalScrollOffset = verticalScrollOffset)
                     edgeProbeScheduler.onScroll()
 
-                    if (scrollY <= 0) {
+                    if (verticalScrollOffset <= 0) {
                         accumulatedScrollDy = 0
                         viewModel.setToolbarCollapsed(false)
                         return@setOnScrollChangeListener
@@ -97,27 +92,11 @@ fun VerveWebView(
                 }
 
                 addOnLayoutChangeListener { _, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom ->
-                    val oldWidth = oldRight - oldLeft
-                    val newWidth = right - left
-                    val oldHeight = oldBottom - oldTop
-                    val newHeight = bottom - top
-
-                    if (oldWidth > 0 && oldHeight > 0 && oldWidth == newWidth && oldHeight != newHeight) {
-                        val heightDelta = oldHeight - newHeight
-                        val pendingCompensation = bottomCoordinator.consumePendingFloorDelta()
-                        if (pendingCompensation != 0 && abs(heightDelta - pendingCompensation) <= 4) {
-                            isCompensatingFloorScroll = true
-                            try {
-                                scrollBy(0, heightDelta)
-                            } finally {
-                                isCompensatingFloorScroll = false
-                            }
-                        }
-                    }
-
-                    if (newWidth != oldWidth || newHeight != oldHeight) {
+                    val widthChanged = (right - left) != (oldRight - oldLeft)
+                    val heightChanged = (bottom - top) != (oldBottom - oldTop)
+                    if (widthChanged || heightChanged) {
                         bottomCoordinator.onViewportChanged()
-                        edgeProbeScheduler.scheduleDebounced(100L)
+                        edgeProbeScheduler.scheduleDebounced(80L)
                     }
                 }
 
@@ -135,7 +114,7 @@ fun VerveWebView(
                     override fun onProgressChanged(view: WebView?, newProgress: Int) {
                         viewModel.onProgressChanged(newProgress)
                         if (newProgress == 100) {
-                            edgeProbeScheduler.scheduleDebounced(100L)
+                            edgeProbeScheduler.scheduleDebounced(80L)
                         }
                     }
                 }
@@ -149,8 +128,6 @@ fun VerveWebView(
             }
         },
         update = { webView ->
-            scrollCoordinatorRef?.updateCurrentFloorPx(floorHeightPx)
-
             if (url.isNotEmpty() && url != lastLoadedUrl) {
                 lastLoadedUrl = url
                 scrollCoordinatorRef?.resetForNavigation()
@@ -161,119 +138,73 @@ fun VerveWebView(
 }
 
 /**
- * Coordinates document-bottom detection using normalized WebView view-pixel coordinates
- * with hysteresis, frame-locked scroll compensation, and dynamic content handling.
+ * Option 3: Zero-resize document-bottom scroll coordinator.
+ * Because WebView maintains a constant height, vertical scroll offsets never experience
+ * resize clamping or layout-compensation feedback loops during fast flings.
  */
 private class DocumentBottomScrollCoordinator(
     private val webView: WebView,
     private val viewModel: BrowserViewModel
 ) {
     private val density = webView.resources.displayMetrics.density
-    private val bottomTriggerThresholdPx = (4f * density).roundToInt()
-    private val upwardExitHysteresisPx = (8f * density).roundToInt()
-    private val reentryClearancePx = (16f * density).roundToInt()
+    private val approachZonePx = (96f * density).coerceAtLeast(1f)
+    private val lookaheadZonePx = (220f * density).roundToInt()
     private val minScrollableRangePx = (16f * density).roundToInt()
 
-    private var currentFloorPx: Int = 0
-    private var previousFloorPx: Int = 0
-    private var pendingFloorDeltaPx: Int = 0
-    private var isAtBottomState: Boolean = false
+    private var lastReportedProgress: Float = 0f
     private var lastJsScrollMetrics: WebScrollMetrics? = null
-    private var lastObservedContentHeightPx: Int = 0
-    private var suppressReentryUntilUpwardClear: Boolean = false
+    @Volatile
+    private var inBottomLookahead: Boolean = false
 
-    fun updateCurrentFloorPx(floorPx: Int) {
-        val clamped = floorPx.coerceAtLeast(0)
-        val delta = clamped - previousFloorPx
-        if (delta != 0) {
-            pendingFloorDeltaPx += delta
-            previousFloorPx = clamped
-        }
-        currentFloorPx = clamped
-    }
-
-    fun consumePendingFloorDelta(): Int {
-        val delta = pendingFloorDeltaPx
-        pendingFloorDeltaPx = 0
-        return delta
-    }
+    fun isInBottomLookaheadZone(): Boolean = inBottomLookahead
 
     fun resetForNavigation() {
-        currentFloorPx = 0
-        previousFloorPx = 0
-        pendingFloorDeltaPx = 0
-        isAtBottomState = false
+        lastReportedProgress = 0f
         lastJsScrollMetrics = null
-        lastObservedContentHeightPx = 0
-        suppressReentryUntilUpwardClear = false
-        viewModel.setAtPageBottom(false)
+        inBottomLookahead = false
+        viewModel.updateBottomCurtainProgress(0f)
     }
 
     fun onJsScrollMetricsUpdated(metrics: WebScrollMetrics?) {
         if (metrics == null) return
-        val prevContentHeight = lastObservedContentHeightPx
         lastJsScrollMetrics = metrics
-
-        // Retract curtain automatically if infinite scroll / dynamic DOM expands the page
-        if (isAtBottomState && prevContentHeight > 0 && metrics.contentHeightPx > prevContentHeight + reentryClearancePx) {
-            val fullViewportPx = webView.height + currentFloorPx
-            val remainingToUnflooredBottom = metrics.contentHeightPx - (metrics.scrollOffsetPx + fullViewportPx)
-            if (remainingToUnflooredBottom > reentryClearancePx) {
-                setBottomState(false)
-            }
-        }
-        lastObservedContentHeightPx = metrics.contentHeightPx
-        evaluateScrollPosition(scrollY = max(webView.scrollY, metrics.scrollOffsetPx), dy = 0)
+        evaluateScrollPosition(verticalScrollOffset = max(webView.scrollY, metrics.scrollOffsetPx))
     }
 
     fun onViewportChanged() {
-        evaluateScrollPosition(scrollY = webView.scrollY, dy = 0)
+        evaluateScrollPosition(verticalScrollOffset = webView.scrollY)
     }
 
-    fun onScrollChanged(scrollY: Int, dy: Int) {
-        evaluateScrollPosition(scrollY = scrollY, dy = dy)
+    fun onScrollChanged(verticalScrollOffset: Int) {
+        evaluateScrollPosition(verticalScrollOffset = verticalScrollOffset)
     }
 
-    private fun evaluateScrollPosition(scrollY: Int, dy: Int) {
-        val currentViewHeight = webView.height
-        if (currentViewHeight <= 0) return
+    private fun evaluateScrollPosition(verticalScrollOffset: Int) {
+        val viewportHeightPx = webView.height
+        if (viewportHeightPx <= 0) return
 
-        val fullViewportHeightPx = currentViewHeight + currentFloorPx
         val androidContentHeightPx = computeAndroidContentHeightPx()
         val jsContentHeightPx = lastJsScrollMetrics?.contentHeightPx ?: 0
         val totalContentHeightPx = max(androidContentHeightPx, jsContentHeightPx)
-        lastObservedContentHeightPx = totalContentHeightPx
 
-        val isScrollable = totalContentHeightPx > fullViewportHeightPx + minScrollableRangePx
-        if (!isScrollable) {
-            if (isAtBottomState) {
-                setBottomState(false)
-            }
+        val maxScrollPx = totalContentHeightPx - viewportHeightPx
+        if (maxScrollPx <= minScrollableRangePx) {
+            inBottomLookahead = false
+            reportProgress(0f)
             return
         }
 
-        if (!isAtBottomState) {
-            val distanceToUnflooredBottomPx = totalContentHeightPx - (scrollY + fullViewportHeightPx)
-            if (suppressReentryUntilUpwardClear) {
-                if (distanceToUnflooredBottomPx > reentryClearancePx || dy > 0) {
-                    suppressReentryUntilUpwardClear = false
-                } else {
-                    return
-                }
-            }
+        val clampedScrollOffset = verticalScrollOffset.coerceIn(0, maxScrollPx)
+        val remainingToBottomPx = (maxScrollPx - clampedScrollOffset).coerceAtLeast(0)
+        inBottomLookahead = remainingToBottomPx <= lookaheadZonePx
 
-            if (distanceToUnflooredBottomPx <= bottomTriggerThresholdPx && dy >= 0) {
-                setBottomState(true)
-            }
+        val progress = if (remainingToBottomPx >= approachZonePx) {
+            0f
         } else {
-            val flooredMaxScrollPx = (totalContentHeightPx - currentViewHeight).coerceAtLeast(0)
-            val upwardDistanceFromFlooredBottomPx = flooredMaxScrollPx - scrollY
-
-            if (dy < 0 && upwardDistanceFromFlooredBottomPx > upwardExitHysteresisPx) {
-                suppressReentryUntilUpwardClear = true
-                setBottomState(false)
-            }
+            (1f - (remainingToBottomPx.toFloat() / approachZonePx)).coerceIn(0f, 1f)
         }
+
+        reportProgress(progress)
     }
 
     @Suppress("DEPRECATION")
@@ -282,10 +213,15 @@ private class DocumentBottomScrollCoordinator(
         return max(cssScaleHeight, webView.scrollY + webView.height)
     }
 
-    private fun setBottomState(atBottom: Boolean) {
-        if (isAtBottomState == atBottom) return
-        isAtBottomState = atBottom
-        viewModel.setAtPageBottom(atBottom)
+    private fun reportProgress(progress: Float) {
+        val normalized = when {
+            progress < 0.005f -> 0f
+            progress > 0.995f -> 1f
+            else -> progress
+        }
+        if (abs(lastReportedProgress - normalized) < 0.002f) return
+        lastReportedProgress = normalized
+        viewModel.updateBottomCurtainProgress(normalized)
     }
 }
 
@@ -300,7 +236,11 @@ private class EdgeProbeScheduler(
 
     private val probeRunnable = Runnable {
         lastProbeTimestampMs = SystemClock.uptimeMillis()
-        WebEdgeColorExtractor.extractEdgeProbe(webView) { probeResult ->
+        val approachingBottom = bottomCoordinator.isInBottomLookaheadZone()
+        WebEdgeColorExtractor.extractEdgeProbe(
+            webView = webView,
+            isApproachingBottom = approachingBottom
+        ) { probeResult ->
             viewModel.updateTopRegionColor(probeResult.topColor)
             viewModel.updateBottomRegionColor(probeResult.bottomColor)
             bottomCoordinator.onJsScrollMetricsUpdated(probeResult.scrollMetrics)
@@ -314,12 +254,16 @@ private class EdgeProbeScheduler(
 
     fun onScroll() {
         val now = SystemClock.uptimeMillis()
-        if (now - lastProbeTimestampMs >= 140L) {
+        val approachingBottom = bottomCoordinator.isInBottomLookaheadZone()
+        val throttleMs = if (approachingBottom) 60L else 140L
+        val settleDelayMs = if (approachingBottom) 70L else 120L
+
+        if (now - lastProbeTimestampMs >= throttleMs) {
             handler.removeCallbacks(probeRunnable)
             probeRunnable.run()
         }
         handler.removeCallbacks(probeRunnable)
-        handler.postDelayed(probeRunnable, 120L)
+        handler.postDelayed(probeRunnable, settleDelayMs)
     }
 
     fun attachDomMutationObserver() {
@@ -333,7 +277,7 @@ private class EdgeProbeScheduler(
 
             nativePort.setWebMessageCallback(object : WebMessagePort.WebMessageCallback() {
                 override fun onMessage(port: WebMessagePort?, message: WebMessage?) {
-                    scheduleDebounced(200L)
+                    scheduleDebounced(150L)
                 }
             }, handler)
 
@@ -407,7 +351,7 @@ private class CustomWebViewClient(
     override fun onPageCommitVisible(view: WebView?, url: String?) {
         super.onPageCommitVisible(view, url)
         if (!url.isNullOrBlank() && url != "about:blank") {
-            edgeProbeScheduler.scheduleDebounced(40L)
+            edgeProbeScheduler.scheduleDebounced(30L)
             WebSnapshotColorExtractor.extractFromWebView(view, delayMs = 80L) { extractedColor ->
                 viewModel.onSnapshotColorReady(extractedColor)
             }
@@ -417,7 +361,7 @@ private class CustomWebViewClient(
     override fun onPageFinished(view: WebView?, url: String?) {
         super.onPageFinished(view, url)
         if (!url.isNullOrBlank() && url != "about:blank") {
-            edgeProbeScheduler.scheduleDebounced(180L)
+            edgeProbeScheduler.scheduleDebounced(140L)
             edgeProbeScheduler.attachDomMutationObserver()
             WebSnapshotColorExtractor.extractFromWebView(view, delayMs = 350L) { extractedColor ->
                 viewModel.onSnapshotColorReady(extractedColor)
@@ -436,7 +380,7 @@ private class CustomWebViewClient(
         super.doUpdateVisitedHistory(view, url, isReload)
         if (!url.isNullOrBlank() && url != "about:blank") {
             onNavigatedUrl(url)
-            edgeProbeScheduler.scheduleDebounced(200L)
+            edgeProbeScheduler.scheduleDebounced(160L)
         }
         if (!isReload) {
             WebSnapshotColorExtractor.extractFromWebView(view, delayMs = 400L) { extractedColor ->
@@ -488,6 +432,7 @@ private class CustomWebViewClient(
         return super.shouldInterceptRequest(view, webResourceRequest)
     }
 
+    @Suppress("SpellCheckingInspection")
     private fun determineResourceType(request: WebResourceRequest): String {
         if (request.isForMainFrame) return "main_frame"
 

@@ -1,16 +1,12 @@
 package com.verve.browser.presentation.browser.components
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.expandHorizontally
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
@@ -20,9 +16,7 @@ import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
-import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -30,9 +24,25 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.lerp
+import androidx.compose.ui.unit.sp
+
+internal val ExpressiveToolbarQuickSpring = spring<Float>(
+    dampingRatio = 0.78f,
+    stiffness = 500f
+)
+
+private val SideButtonSize = 56.dp
+private val SideButtonGap = 8.dp
+private val SideSlotFullWidth = SideButtonSize + SideButtonGap
 
 @Composable
 fun ExpressiveBottomToolbar(
@@ -52,20 +62,55 @@ fun ExpressiveBottomToolbar(
     onSiteSettingsClick: () -> Unit = {},
     onRefreshClick: () -> Unit = {}
 ) {
+    val density = LocalDensity.current
+    val textMeasurer = rememberTextMeasurer()
     val effectiveCollapsed = isWebMode && isCollapsed && !isSearchFocused
-    val swipeThresholdPx = with(LocalDensity.current) { 18.dp.toPx() }
+    val swipeThresholdPx = with(density) { 18.dp.toPx() }
+    val sideSlideOffsetPx = with(density) { 16.dp.toPx() }
     var dragDelta by remember { mutableFloatStateOf(0f) }
+
+    val expandProgress by animateFloatAsState(
+        targetValue = if (effectiveCollapsed) 0f else 1f,
+        animationSpec = ExpressiveToolbarQuickSpring,
+        label = "toolbarExpandProgress"
+    )
+
+    val leftButtonProgress by animateFloatAsState(
+        targetValue = if (isWebMode && !effectiveCollapsed && !isSearchFocused) 1f else 0f,
+        animationSpec = ExpressiveToolbarQuickSpring,
+        label = "leftButtonProgress"
+    )
+
+    val rightButtonProgress by animateFloatAsState(
+        targetValue = if (!effectiveCollapsed && !isSearchFocused) 1f else 0f,
+        animationSpec = ExpressiveToolbarQuickSpring,
+        label = "rightButtonProgress"
+    )
 
     val verticalPadding by animateDpAsState(
         targetValue = if (effectiveCollapsed) 8.dp else 10.dp,
         animationSpec = spring(
-            dampingRatio = 0.82f,
-            stiffness = Spring.StiffnessMediumLow
+            dampingRatio = 0.78f,
+            stiffness = 500f
         ),
         label = "toolbarVerticalPadding"
     )
 
-    Row(
+    val displayDomain = remember(currentUrl) { extractDisplayDomain(currentUrl) }
+    val collapsedPillWidth = remember(displayDomain, density) {
+        val measuredWidthPx = textMeasurer.measure(
+            text = AnnotatedString(displayDomain.ifEmpty { "google.com" }),
+            style = TextStyle(
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold
+            ),
+            maxLines = 1
+        ).size.width
+        val measuredWidthDp = with(density) { measuredWidthPx.toDp() } + 40.dp
+        measuredWidthDp.coerceIn(112.dp, 220.dp)
+    }
+
+    BoxWithConstraints(
         modifier = modifier
             .fillMaxWidth()
             .windowInsetsPadding(bottomWindowInsets)
@@ -86,70 +131,84 @@ fun ExpressiveBottomToolbar(
                         }
                     }
                 )
-            },
-        horizontalArrangement = Arrangement.Center,
-        verticalAlignment = Alignment.CenterVertically
+            }
     ) {
-        // Left Action Squircle Button (hidden when collapsed or while typing in search)
-        AnimatedVisibility(
-            visible = isWebMode && !effectiveCollapsed && !isSearchFocused,
-            enter = fadeIn(tween(180)) + expandHorizontally(
-                animationSpec = tween(220),
-                expandFrom = Alignment.Start
-            ),
-            exit = fadeOut(tween(140)) + shrinkHorizontally(
-                animationSpec = tween(200),
-                shrinkTowards = Alignment.Start
-            )
-        ) {
-            Row(
-                modifier = Modifier.padding(vertical = 10.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                ExpressiveLeftActionButton(onClick = onLeftActionClick)
-                Spacer(modifier = Modifier.width(8.dp))
-            }
-        }
+        val clampedExpand = expandProgress.coerceAtLeast(0f)
+        val clampedLeft = leftButtonProgress.coerceAtLeast(0f)
+        val clampedRight = rightButtonProgress.coerceAtLeast(0f)
 
-        // Center Search / Domain Pill
-        ExpressiveSearchPill(
-            inputText = inputText,
-            onInputTextChange = onInputTextChange,
-            onUrlSubmitted = onUrlSubmitted,
-            currentUrl = currentUrl,
-            isWebMode = isWebMode,
-            isCollapsed = effectiveCollapsed,
-            onFocusChanged = onSearchFocusChanged,
-            onExpandClick = { onCollapsedChange(false) },
-            onSiteSettingsClick = onSiteSettingsClick,
-            onRefreshClick = onRefreshClick,
-            modifier = if (effectiveCollapsed) {
-                Modifier
-                    .wrapContentWidth()
-                    .widthIn(min = 112.dp, max = 240.dp)
-            } else {
-                Modifier.weight(1f)
-            }
+        val leftSlotWidth = SideSlotFullWidth * clampedLeft
+        val rightSlotWidth = SideSlotFullWidth * clampedRight
+        val targetExpandedPillWidth = (maxWidth - leftSlotWidth - rightSlotWidth)
+            .coerceAtLeast(collapsedPillWidth)
+        val currentPillWidth = lerp(
+            start = collapsedPillWidth,
+            stop = targetExpandedPillWidth,
+            fraction = clampedExpand.coerceIn(0f, 1.03f)
         )
 
-        // Right Tab Switcher Button (hidden when collapsed or while typing in search)
-        AnimatedVisibility(
-            visible = !effectiveCollapsed && !isSearchFocused,
-            enter = fadeIn(tween(180)) + expandHorizontally(
-                animationSpec = tween(220),
-                expandFrom = Alignment.End
-            ),
-            exit = fadeOut(tween(140)) + shrinkHorizontally(
-                animationSpec = tween(200),
-                shrinkTowards = Alignment.End
-            )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Row(
-                modifier = Modifier.padding(vertical = 10.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Spacer(modifier = Modifier.width(8.dp))
-                ExpressiveTabButton(onClick = onTabSwitcherClick)
+            if (leftSlotWidth > 0.5.dp) {
+                val leftAlpha = leftButtonProgress.coerceIn(0f, 1f)
+                val leftScale = 0.72f + 0.28f * leftButtonProgress
+                Box(
+                    modifier = Modifier
+                        .width(leftSlotWidth)
+                        .padding(vertical = 10.dp)
+                        .graphicsLayer {
+                            alpha = leftAlpha
+                            scaleX = leftScale
+                            scaleY = leftScale
+                            translationX = sideSlideOffsetPx * (1f - leftButtonProgress)
+                        },
+                    contentAlignment = Alignment.CenterStart
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        ExpressiveLeftActionButton(onClick = onLeftActionClick)
+                        Spacer(modifier = Modifier.width(SideButtonGap))
+                    }
+                }
+            }
+
+            ExpressiveSearchPill(
+                inputText = inputText,
+                onInputTextChange = onInputTextChange,
+                onUrlSubmitted = onUrlSubmitted,
+                currentUrl = currentUrl,
+                isWebMode = isWebMode,
+                isCollapsed = effectiveCollapsed,
+                expandProgress = expandProgress,
+                onFocusChanged = onSearchFocusChanged,
+                onExpandClick = { onCollapsedChange(false) },
+                onSiteSettingsClick = onSiteSettingsClick,
+                onRefreshClick = onRefreshClick,
+                modifier = Modifier.width(currentPillWidth)
+            )
+
+            if (rightSlotWidth > 0.5.dp) {
+                val rightAlpha = rightButtonProgress.coerceIn(0f, 1f)
+                val rightScale = 0.72f + 0.28f * rightButtonProgress
+                Box(
+                    modifier = Modifier
+                        .width(rightSlotWidth)
+                        .padding(vertical = 10.dp)
+                        .graphicsLayer {
+                            alpha = rightAlpha
+                            scaleX = rightScale
+                            scaleY = rightScale
+                            translationX = -sideSlideOffsetPx * (1f - rightButtonProgress)
+                        },
+                    contentAlignment = Alignment.CenterEnd
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Spacer(modifier = Modifier.width(SideButtonGap))
+                        ExpressiveTabButton(onClick = onTabSwitcherClick)
+                    }
+                }
             }
         }
     }

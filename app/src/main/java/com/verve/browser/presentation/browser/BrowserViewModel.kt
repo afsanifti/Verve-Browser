@@ -19,6 +19,7 @@ import org.json.JSONArray
 import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLEncoder
+import kotlin.math.abs
 
 class BrowserViewModel(
     private val shouldBlockUrlUseCase: ShouldBlockUrlUseCase
@@ -128,10 +129,19 @@ class BrowserViewModel(
         }
     }
 
-    fun setAtPageBottom(atBottom: Boolean) {
+    fun updateBottomCurtainProgress(progress: Float) {
         _uiState.update { state ->
-            val target = if (state.currentUrl.isEmpty()) false else atBottom
-            if (state.isAtPageBottom == target) state else state.copy(isAtPageBottom = target)
+            val clamped = if (state.currentUrl.isEmpty()) 0f else progress.coerceIn(0f, 1f)
+            val normalized = when {
+                clamped < 0.005f -> 0f
+                clamped > 0.995f -> 1f
+                else -> clamped
+            }
+            if (abs(state.bottomCurtainProgress - normalized) < 0.002f) {
+                state
+            } else {
+                state.copy(bottomCurtainProgress = normalized)
+            }
         }
     }
 
@@ -195,7 +205,7 @@ class BrowserViewModel(
                 siteSeedColor = null,
                 topRegionColor = null,
                 bottomRegionColor = null,
-                isAtPageBottom = false,
+                bottomCurtainProgress = 0f,
                 isPageReadyToReveal = false,
                 isToolbarCollapsed = false,
                 canGoBack = false,
@@ -238,7 +248,7 @@ class BrowserViewModel(
                 siteSeedColor = null,
                 topRegionColor = null,
                 bottomRegionColor = null,
-                isAtPageBottom = false,
+                bottomCurtainProgress = 0f,
                 isPageReadyToReveal = false,
                 isToolbarCollapsed = false
             )

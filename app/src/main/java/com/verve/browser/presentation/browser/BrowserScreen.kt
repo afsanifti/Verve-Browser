@@ -7,7 +7,7 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateDpAsState
-import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -19,7 +19,6 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.consumeWindowInsets
@@ -28,6 +27,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
@@ -44,11 +44,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
@@ -59,8 +61,10 @@ import com.verve.browser.presentation.browser.components.SearchSuggestionsList
 import com.verve.browser.presentation.browser.components.VerveWebView
 import kotlinx.coroutines.delay
 import kotlin.math.max
+import kotlin.time.Duration.Companion.milliseconds
 
-private val BottomCurtainToolbarHeight = 54.dp
+private val CollapsedToolbarTotalHeight = 54.dp
+private val ExpandedToolbarTotalHeight = 92.dp
 
 @Composable
 fun BrowserScreen(
@@ -100,7 +104,7 @@ fun BrowserScreen(
     }
 
     val targetBottomColor = if (isOnWebPage && !uiState.isSearchFocused) {
-        uiState.bottomRegionColor ?: defaultRegionColor
+        uiState.bottomRegionColor ?: uiState.topRegionColor ?: defaultRegionColor
     } else {
         defaultRegionColor
     }
@@ -113,33 +117,33 @@ fun BrowserScreen(
 
     val animatedBottomColor by animateColorAsState(
         targetValue = targetBottomColor,
-        animationSpec = tween(durationMillis = 220, easing = FastOutSlowInEasing),
+        animationSpec = tween(durationMillis = 110, easing = FastOutSlowInEasing),
         label = "adaptiveBottomRegionColor"
     )
 
-    // Conditional bottom curtain: transparent (0.dp) during normal scrolling;
-    // rises smoothly to cover the compact toolbar + navigation bar inset
-    // when the actual document bottom is reached.
-    val shouldShowBottomCurtain = isOnWebPage && uiState.isAtPageBottom && !uiState.isSearchFocused
-    val targetBottomCurtainHeightDp = if (shouldShowBottomCurtain) {
-        BottomCurtainToolbarHeight + bottomNavInsetHeightDp
+    // Option 3: Match the floating toolbar's active height (collapsed 54.dp vs expanded 92.dp)
+    val isToolbarEffectivelyCollapsed = isOnWebPage && uiState.isToolbarCollapsed && !uiState.isSearchFocused
+    val activeToolbarHeightDp by animateDpAsState(
+        targetValue = if (isToolbarEffectivelyCollapsed) {
+            CollapsedToolbarTotalHeight
+        } else {
+            ExpandedToolbarTotalHeight
+        },
+        animationSpec = spring(
+            dampingRatio = 0.78f,
+            stiffness = 500f
+        ),
+        label = "activeToolbarCurtainHeight"
+    )
+
+    val effectiveCurtainProgress = if (isOnWebPage && !uiState.isSearchFocused) {
+        uiState.bottomCurtainProgress.coerceIn(0f, 1f)
     } else {
-        0.dp
+        0f
     }
-
-    val animatedBottomCurtainHeightDp by animateDpAsState(
-        targetValue = targetBottomCurtainHeightDp,
-        animationSpec = tween(durationMillis = 200, easing = FastOutSlowInEasing),
-        label = "bottomCurtainHeight"
-    )
-
-    val animatedBottomCurtainAlpha by animateFloatAsState(
-        targetValue = if (shouldShowBottomCurtain) 1f else 0f,
-        animationSpec = tween(durationMillis = 180, easing = FastOutSlowInEasing),
-        label = "bottomCurtainAlpha"
-    )
-
-    val animatedBottomFloorHeightPx = with(density) { animatedBottomCurtainHeightDp.roundToPx() }
+    val fullBottomCurtainHeightDp = activeToolbarHeightDp + bottomNavInsetHeightDp
+    val progressiveBottomCurtainHeightDp = fullBottomCurtainHeightDp * effectiveCurtainProgress
+    val progressiveBottomShiftPx = with(density) { progressiveBottomCurtainHeightDp.roundToPx() }
 
     if (!view.isInEditMode) {
         val isTopLight = targetTopColor.luminance() > 0.5f
@@ -154,7 +158,7 @@ fun BrowserScreen(
 
     LaunchedEffect(uiState.currentUrl) {
         if (uiState.currentUrl.isNotEmpty()) {
-            delay(1500L)
+            delay(1500L.milliseconds)
             viewModel.onRevealTimeout()
         }
     }
@@ -180,43 +184,29 @@ fun BrowserScreen(
             .fillMaxSize()
             .background(defaultRegionColor)
     ) {
-        // LAYER 1: Webpage Viewport
-        // - Top inset (status bar + display cutout) applied exactly once so content
-        //   begins immediately below the status bar and display cutout safe area.
-        // - Bottom extends full-bleed behind the floating pill by default, and rises
-        //   smoothly by animatedBottomCurtainHeightDp only when the document bottom is reached.
-        Column(
+        // LAYER 1: Constant-Height Webpage Viewport
+        // Never resizes during scroll/flings; lifts smoothly upward by progressiveBottomShiftPx
+        // as the document bottom is reached so final footer content clears the curtain.
+        Box(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(top = topSafeAreaHeightDp)
+                .clipToBounds()
                 .consumeWindowInsets(topSafeAreaInsets.union(bottomNavInsets))
         ) {
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth()
-            ) {
-                if (isOnWebPage) {
-                    VerveWebView(
-                        url = uiState.currentUrl,
-                        viewModel = viewModel,
-                        floorHeightPx = animatedBottomFloorHeightPx,
-                        onWebViewCreated = { webViewRef = it },
-                        modifier = Modifier.fillMaxSize()
-                    )
-
-                    PageRevealCurtain(
-                        visible = !uiState.isPageReadyToReveal,
-                        progress = uiState.loadingProgress
-                    )
-                }
-            }
-
-            if (animatedBottomCurtainHeightDp > 0.dp) {
-                Spacer(
+            if (isOnWebPage) {
+                VerveWebView(
+                    url = uiState.currentUrl,
+                    viewModel = viewModel,
+                    onWebViewCreated = { webViewRef = it },
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .height(animatedBottomCurtainHeightDp)
+                        .fillMaxSize()
+                        .offset { IntOffset(0, -progressiveBottomShiftPx) }
+                )
+
+                PageRevealCurtain(
+                    visible = !uiState.isPageReadyToReveal,
+                    progress = uiState.loadingProgress
                 )
             }
         }
@@ -230,14 +220,14 @@ fun BrowserScreen(
                 .background(animatedTopColor)
         )
 
-        // LAYER 2B: Conditional Adaptive Bottom Curtain (transparent until document bottom is reached)
-        if (animatedBottomCurtainHeightDp > 0.dp && animatedBottomCurtainAlpha > 0.001f) {
+        // LAYER 2B: Decoupled Progressive Bottom Curtain
+        if (progressiveBottomCurtainHeightDp > 0.dp && effectiveCurtainProgress > 0.001f) {
             Box(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .fillMaxWidth()
-                    .height(animatedBottomCurtainHeightDp)
-                    .graphicsLayer { alpha = animatedBottomCurtainAlpha }
+                    .height(progressiveBottomCurtainHeightDp)
+                    .graphicsLayer { alpha = effectiveCurtainProgress }
                     .background(animatedBottomColor)
             )
         }
