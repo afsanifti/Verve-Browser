@@ -90,12 +90,12 @@ fun BrowserScreen(
             .fillMaxSize()
             .background(defaultRegionColor)
     ) {
-        // LAYER 1: Constant-Height Webpage Viewport
+        // LAYER 1: Webpage Viewport
         BrowserWebViewport(
             uiState = uiState,
             isOnWebPage = isOnWebPage,
             insetsState = insetsState,
-            progressiveBottomShiftPx = curtainMetrics.progressiveBottomShiftPx,
+            curtainMetrics = curtainMetrics,
             viewModel = viewModel,
             tabWebViewPool = tabWebViewPool,
             thumbnailCache = thumbnailCache,
@@ -105,6 +105,7 @@ fun BrowserScreen(
         // LAYER 2A: Independent Adaptive Top Region (status bar + display cutout)
         BrowserTopSafeAreaCurtain(
             topSafeAreaHeightDp = insetsState.topSafeAreaHeightDp,
+            defaultRegionColor = defaultRegionColor,
             animatedTopColor = curtainMetrics.animatedTopColor,
             modifier = Modifier.align(Alignment.TopCenter)
         )

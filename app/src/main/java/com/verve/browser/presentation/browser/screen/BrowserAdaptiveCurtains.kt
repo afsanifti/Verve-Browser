@@ -33,7 +33,8 @@ internal data class BrowserCurtainMetrics(
     val animatedBottomColor: Color,
     val effectiveCurtainProgress: Float,
     val progressiveBottomCurtainHeightDp: Dp,
-    val progressiveBottomShiftPx: Int
+    val fixedBottomPaddingDp: Dp,
+    val scrollBottomShiftPx: Int
 )
 
 @Composable
@@ -100,7 +101,23 @@ internal fun rememberBrowserCurtainMetrics(
 
     val fullBottomCurtainHeightDp = activeToolbarHeightDp + bottomNavInsetHeightDp
     val progressiveBottomCurtainHeightDp = fullBottomCurtainHeightDp * effectiveCurtainProgress
-    val progressiveBottomShiftPx = with(density) { progressiveBottomCurtainHeightDp.roundToPx() }
+
+    // Reserve bottom viewport height for sites with docked navbars without shifting the top edge
+    val fixedBottomPaddingDp = if (isOnWebPage && !uiState.isSearchFocused) {
+        fullBottomCurtainHeightDp * fixedBottomBarProgress
+    } else {
+        0.dp
+    }
+
+    // Only apply upward scroll shift when reaching page bottom without an active fixed-bar padding
+    val scrollOnlyCurtainProgress = if (isOnWebPage && !uiState.isSearchFocused) {
+        (uiState.bottomCurtainProgress - fixedBottomBarProgress).coerceIn(0f, 1f)
+    } else {
+        0f
+    }
+    val scrollBottomShiftPx = with(density) {
+        (fullBottomCurtainHeightDp * scrollOnlyCurtainProgress).roundToPx()
+    }
 
     return BrowserCurtainMetrics(
         targetTopColor = targetTopColor,
@@ -109,13 +126,15 @@ internal fun rememberBrowserCurtainMetrics(
         animatedBottomColor = animatedBottomColor,
         effectiveCurtainProgress = effectiveCurtainProgress,
         progressiveBottomCurtainHeightDp = progressiveBottomCurtainHeightDp,
-        progressiveBottomShiftPx = progressiveBottomShiftPx
+        fixedBottomPaddingDp = fixedBottomPaddingDp,
+        scrollBottomShiftPx = scrollBottomShiftPx
     )
 }
 
 @Composable
 internal fun BrowserTopSafeAreaCurtain(
     topSafeAreaHeightDp: Dp,
+    defaultRegionColor: Color,
     animatedTopColor: Color,
     modifier: Modifier = Modifier
 ) {
@@ -123,6 +142,7 @@ internal fun BrowserTopSafeAreaCurtain(
         modifier = modifier
             .fillMaxWidth()
             .height(topSafeAreaHeightDp)
+            .background(defaultRegionColor)
             .background(animatedTopColor)
     )
 }

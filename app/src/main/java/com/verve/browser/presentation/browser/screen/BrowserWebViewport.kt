@@ -9,7 +9,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.union
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.IntOffset
 import com.verve.browser.presentation.browser.BrowserUiState
 import com.verve.browser.presentation.browser.BrowserViewModel
@@ -23,7 +23,7 @@ internal fun BrowserWebViewport(
     uiState: BrowserUiState,
     isOnWebPage: Boolean,
     insetsState: BrowserInsetsState,
-    progressiveBottomShiftPx: Int,
+    curtainMetrics: BrowserCurtainMetrics,
     viewModel: BrowserViewModel,
     tabWebViewPool: TabWebViewPool,
     thumbnailCache: TabThumbnailCache,
@@ -33,8 +33,11 @@ internal fun BrowserWebViewport(
     Box(
         modifier = modifier
             .fillMaxSize()
-            .padding(top = insetsState.topSafeAreaHeightDp)
-            .clipToBounds()
+            .padding(
+                top = insetsState.topSafeAreaHeightDp,
+                bottom = curtainMetrics.fixedBottomPaddingDp
+            )
+            .graphicsLayer { clip = true }
             .consumeWindowInsets(insetsState.topSafeAreaInsets.union(insetsState.bottomNavInsets))
     ) {
         if (isOnWebPage) {
@@ -47,7 +50,7 @@ internal fun BrowserWebViewport(
                 onWebViewCreated = onWebViewCreated,
                 modifier = Modifier
                     .fillMaxSize()
-                    .offset { IntOffset(0, -progressiveBottomShiftPx) }
+                    .offset { IntOffset(0, -curtainMetrics.scrollBottomShiftPx) }
             )
 
             PageRevealCurtain(
