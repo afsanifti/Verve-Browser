@@ -30,6 +30,21 @@ class BrowserViewModel(
 
     private var suggestionJob: Job? = null
 
+    fun openTabSwitcher() {
+        _uiState.update {
+            it.copy(
+                isTabSwitcherOpen = true,
+                isSearchFocused = false
+            )
+        }
+    }
+
+    fun closeTabSwitcher() {
+        _uiState.update {
+            it.copy(isTabSwitcherOpen = false)
+        }
+    }
+
     fun onSearchFocusChanged(focused: Boolean) {
         _uiState.update { state ->
             val initialSuggestions = if (focused) {
@@ -175,23 +190,53 @@ class BrowserViewModel(
         }
     }
 
-    fun onPageUrlUpdated(url: String) {
-        if (url.isNotBlank() && url != "about:blank") {
-            _uiState.update {
-                it.copy(
+    fun onPageUrlUpdated(tabId: String, url: String) {
+        if (url.isBlank() || url == "about:blank") return
+        _uiState.update { state ->
+            val updatedTabs = state.tabs.map { tab ->
+                if (tab.id == tabId) tab.copy(url = url) else tab
+            }
+            if (tabId == state.activeTabId) {
+                state.copy(
+                    tabs = updatedTabs,
                     currentUrl = url,
-                    searchInput = if (it.isSearchFocused) it.searchInput else url
+                    searchInput = if (state.isSearchFocused) state.searchInput else url
                 )
+            } else {
+                state.copy(tabs = updatedTabs)
             }
         }
     }
 
-    fun onSnapshotColorReady(color: Color?) {
-        _uiState.update {
-            it.copy(
-                siteSeedColor = color ?: it.siteSeedColor,
-                isPageReadyToReveal = true
-            )
+    fun onPageTitleUpdated(tabId: String, title: String) {
+        val cleanTitle = title.trim()
+        if (cleanTitle.isEmpty()) return
+        _uiState.update { state ->
+            val updatedTabs = state.tabs.map { tab ->
+                if (tab.id == tabId) tab.copy(title = cleanTitle) else tab
+            }
+            state.copy(tabs = updatedTabs)
+        }
+    }
+
+    fun onSnapshotColorReady(tabId: String, color: Color?) {
+        _uiState.update { state ->
+            val updatedTabs = state.tabs.map { tab ->
+                if (tab.id == tabId) {
+                    tab.copy(siteSeedColor = color ?: tab.siteSeedColor)
+                } else {
+                    tab
+                }
+            }
+            if (tabId == state.activeTabId) {
+                state.copy(
+                    tabs = updatedTabs,
+                    siteSeedColor = color ?: state.siteSeedColor,
+                    isPageReadyToReveal = true
+                )
+            } else {
+                state.copy(tabs = updatedTabs)
+            }
         }
     }
 
@@ -199,39 +244,81 @@ class BrowserViewModel(
         _uiState.update { it.copy(isPageReadyToReveal = true) }
     }
 
-    fun updateSiteSeedColor(color: Color?) {
-        _uiState.update { it.copy(siteSeedColor = color) }
-    }
-
-    fun updateTopRegionColor(color: Color?) {
-        if (color == null) return
+    fun updateSiteSeedColor(tabId: String, color: Color?) {
         _uiState.update { state ->
-            if (WebEdgeColorExtractor.isPerceptuallySimilar(state.topRegionColor, color)) {
-                state
+            val updatedTabs = state.tabs.map { tab ->
+                if (tab.id == tabId) tab.copy(siteSeedColor = color) else tab
+            }
+            if (tabId == state.activeTabId) {
+                state.copy(tabs = updatedTabs, siteSeedColor = color)
             } else {
-                state.copy(topRegionColor = color)
+                state.copy(tabs = updatedTabs)
             }
         }
     }
 
-    fun updateBottomRegionColor(color: Color?) {
+    fun updateTopRegionColor(tabId: String, color: Color?) {
         if (color == null) return
         _uiState.update { state ->
-            if (WebEdgeColorExtractor.isPerceptuallySimilar(state.bottomRegionColor, color)) {
-                state
+            val targetTab = state.tabs.firstOrNull { it.id == tabId }
+            if (targetTab != null && WebEdgeColorExtractor.isPerceptuallySimilar(targetTab.topRegionColor, color)) {
+                return@update state
+            }
+            val updatedTabs = state.tabs.map { tab ->
+                if (tab.id == tabId) tab.copy(topRegionColor = color) else tab
+            }
+            if (tabId == state.activeTabId) {
+                state.copy(tabs = updatedTabs, topRegionColor = color)
             } else {
-                state.copy(bottomRegionColor = color)
+                state.copy(tabs = updatedTabs)
+            }
+        }
+    }
+
+    fun updateBottomRegionColor(tabId: String, color: Color?) {
+        if (color == null) return
+        _uiState.update { state ->
+            val targetTab = state.tabs.firstOrNull { it.id == tabId }
+            if (targetTab != null && WebEdgeColorExtractor.isPerceptuallySimilar(targetTab.bottomRegionColor, color)) {
+                return@update state
+            }
+            val updatedTabs = state.tabs.map { tab ->
+                if (tab.id == tabId) tab.copy(bottomRegionColor = color) else tab
+            }
+            if (tabId == state.activeTabId) {
+                state.copy(tabs = updatedTabs, bottomRegionColor = color)
+            } else {
+                state.copy(tabs = updatedTabs)
             }
         }
     }
 
     fun navigateHome() {
         suggestionJob?.cancel()
-        _uiState.update {
-            it.copy(
+        _uiState.update { state ->
+            val updatedTabs = state.tabs.map { tab ->
+                if (tab.id == state.activeTabId) {
+                    tab.copy(
+                        url = "",
+                        title = "",
+                        siteSeedColor = null,
+                        topRegionColor = null,
+                        bottomRegionColor = null,
+                        isLoading = false,
+                        loadingProgress = 0,
+                        canGoBack = false,
+                        canGoForward = false
+                    )
+                } else {
+                    tab
+                }
+            }
+            state.copy(
+                tabs = updatedTabs,
                 currentUrl = "",
                 searchInput = "",
                 isSearchFocused = false,
+                isTabSwitcherOpen = false,
                 siteSeedColor = null,
                 topRegionColor = null,
                 bottomRegionColor = null,
@@ -240,6 +327,8 @@ class BrowserViewModel(
                 isPageReadyToReveal = false,
                 isToolbarCollapsed = false,
                 isToolbarManuallyCollapsed = false,
+                isLoading = false,
+                loadingProgress = 0,
                 canGoBack = false,
                 canGoForward = false
             )
@@ -271,10 +360,29 @@ class BrowserViewModel(
                 .distinctBy { it.lowercase() }
                 .take(8)
 
+            val updatedTabs = state.tabs.map { tab ->
+                if (tab.id == state.activeTabId) {
+                    tab.copy(
+                        url = destinationUrl,
+                        title = "",
+                        siteSeedColor = null,
+                        topRegionColor = null,
+                        bottomRegionColor = null,
+                        isLoading = true,
+                        loadingProgress = 0,
+                        lastAccessedAt = System.currentTimeMillis()
+                    )
+                } else {
+                    tab
+                }
+            }
+
             state.copy(
+                tabs = updatedTabs,
                 currentUrl = destinationUrl,
                 searchInput = destinationUrl,
                 isSearchFocused = false,
+                isTabSwitcherOpen = false,
                 recentSearches = updatedRecents,
                 searchSuggestions = updatedRecents.take(4),
                 siteSeedColor = null,
@@ -318,18 +426,46 @@ class BrowserViewModel(
         return "https://www.google.com/search?q=$encodedQuery"
     }
 
-    fun onProgressChanged(progress: Int) {
-        _uiState.update {
-            it.copy(
-                loadingProgress = progress,
-                isLoading = progress in 1..99
-            )
+    fun onProgressChanged(tabId: String, progress: Int) {
+        _uiState.update { state ->
+            val isLoading = progress in 1..99
+            val updatedTabs = state.tabs.map { tab ->
+                if (tab.id == tabId) {
+                    tab.copy(isLoading = isLoading, loadingProgress = progress)
+                } else {
+                    tab
+                }
+            }
+            if (tabId == state.activeTabId) {
+                state.copy(
+                    tabs = updatedTabs,
+                    loadingProgress = progress,
+                    isLoading = isLoading
+                )
+            } else {
+                state.copy(tabs = updatedTabs)
+            }
         }
     }
 
-    fun updateNavigationState(canGoBack: Boolean, canGoForward: Boolean) {
-        _uiState.update {
-            it.copy(canGoBack = canGoBack, canGoForward = canGoForward)
+    fun updateNavigationState(tabId: String, canGoBack: Boolean, canGoForward: Boolean) {
+        _uiState.update { state ->
+            val updatedTabs = state.tabs.map { tab ->
+                if (tab.id == tabId) {
+                    tab.copy(canGoBack = canGoBack, canGoForward = canGoForward)
+                } else {
+                    tab
+                }
+            }
+            if (tabId == state.activeTabId) {
+                state.copy(
+                    tabs = updatedTabs,
+                    canGoBack = canGoBack,
+                    canGoForward = canGoForward
+                )
+            } else {
+                state.copy(tabs = updatedTabs)
+            }
         }
     }
 

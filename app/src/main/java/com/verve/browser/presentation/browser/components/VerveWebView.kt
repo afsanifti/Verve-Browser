@@ -1,11 +1,13 @@
 package com.verve.browser.presentation.browser.components
 
 import android.annotation.SuppressLint
+import android.content.Context
 import android.graphics.Bitmap
 import android.net.Uri
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
+import android.view.ViewGroup
 import android.webkit.WebChromeClient
 import android.webkit.WebMessage
 import android.webkit.WebMessagePort
@@ -14,6 +16,7 @@ import android.webkit.WebResourceResponse
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.widget.FrameLayout
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -24,6 +27,8 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import com.verve.browser.presentation.browser.BrowserViewModel
+import com.verve.browser.presentation.browser.util.TabThumbnailCache
+import com.verve.browser.presentation.browser.util.TabWebViewPool
 import com.verve.browser.presentation.browser.util.WebEdgeColorExtractor
 import com.verve.browser.presentation.browser.util.WebScrollMetrics
 import com.verve.browser.presentation.browser.util.WebSnapshotColorExtractor
@@ -35,115 +40,182 @@ import kotlin.math.roundToInt
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
 fun VerveWebView(
+    tabId: String,
     url: String,
     viewModel: BrowserViewModel,
+    tabWebViewPool: TabWebViewPool,
+    thumbnailCache: TabThumbnailCache,
     onWebViewCreated: (WebView) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    var lastLoadedUrl by remember { mutableStateOf("") }
-    var scrollCoordinatorRef by remember { mutableStateOf<DocumentBottomScrollCoordinator?>(null) }
+    var attachedTabId by remember { mutableStateOf("") }
 
     AndroidView(
         modifier = modifier,
         factory = { context ->
-            WebView(context).apply {
-                ViewCompat.setOnApplyWindowInsetsListener(this) { _, _ ->
-                    WindowInsetsCompat.CONSUMED
-                }
-
-                settings.apply {
-                    javaScriptEnabled = true
-                    domStorageEnabled = true
-                    useWideViewPort = true
-                    loadWithOverviewMode = true
-                    mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
-                }
-
-                val bottomCoordinator = DocumentBottomScrollCoordinator(this, viewModel)
-                scrollCoordinatorRef = bottomCoordinator
-                val edgeProbeScheduler = EdgeProbeScheduler(this, viewModel, bottomCoordinator)
-
-                var accumulatedScrollDy = 0
-                val scrollThresholdPx = (24 * context.resources.displayMetrics.density).toInt()
-
-                setOnScrollChangeListener { _, _, verticalScrollOffset, _, oldVerticalScrollOffset ->
-                    val dy = verticalScrollOffset - oldVerticalScrollOffset
-                    bottomCoordinator.onScrollChanged(verticalScrollOffset = verticalScrollOffset)
-                    edgeProbeScheduler.onScroll()
-
-                    if (verticalScrollOffset <= 0) {
-                        accumulatedScrollDy = 0
-                        viewModel.setToolbarCollapsed(false)
-                        return@setOnScrollChangeListener
-                    }
-
-                    if ((dy > 0 && accumulatedScrollDy < 0) || (dy < 0 && accumulatedScrollDy > 0)) {
-                        accumulatedScrollDy = 0
-                    }
-                    accumulatedScrollDy += dy
-
-                    if (accumulatedScrollDy > scrollThresholdPx) {
-                        viewModel.setToolbarCollapsed(true)
-                        accumulatedScrollDy = 0
-                    } else if (accumulatedScrollDy < -scrollThresholdPx) {
-                        viewModel.setToolbarCollapsed(false)
-                        accumulatedScrollDy = 0
-                    }
-                }
-
-                addOnLayoutChangeListener { _, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom ->
-                    val widthChanged = (right - left) != (oldRight - oldLeft)
-                    val heightChanged = (bottom - top) != (oldBottom - oldTop)
-                    if (widthChanged || heightChanged) {
-                        bottomCoordinator.onViewportChanged()
-                        edgeProbeScheduler.scheduleDebounced(80L)
-                    }
-                }
-
-                webViewClient = CustomWebViewClient(
-                    viewModel = viewModel,
-                    edgeProbeScheduler = edgeProbeScheduler,
-                    bottomCoordinator = bottomCoordinator,
-                    onNavigatedUrl = { navigatedUrl ->
-                        lastLoadedUrl = navigatedUrl
-                        viewModel.onPageUrlUpdated(navigatedUrl)
-                    }
+            FrameLayout(context).apply {
+                layoutParams = ViewGroup.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.MATCH_PARENT
                 )
-
-                webChromeClient = object : WebChromeClient() {
-                    override fun onProgressChanged(view: WebView?, newProgress: Int) {
-                        viewModel.onProgressChanged(newProgress)
-                        if (newProgress == 100) {
-                            edgeProbeScheduler.scheduleDebounced(80L)
-                        }
-                    }
-                }
-
-                if (url.isNotEmpty()) {
-                    lastLoadedUrl = url
-                    loadUrl(url)
-                }
-
-                onWebViewCreated(this)
             }
         },
-        update = { webView ->
-            if (url.isNotEmpty() && url != lastLoadedUrl) {
-                lastLoadedUrl = url
-                scrollCoordinatorRef?.resetForNavigation()
-                webView.loadUrl(url)
+        update = { hostContainer ->
+            val targetWebView = tabWebViewPool.getOrCreateWebView(
+                tabId = tabId,
+                context = hostContainer.context
+            ) { ctx ->
+                createTabWebView(
+                    context = ctx,
+                    tabId = tabId,
+                    viewModel = viewModel,
+                    tabWebViewPool = tabWebViewPool,
+                    thumbnailCache = thumbnailCache
+                )
             }
+
+            if (attachedTabId != tabId || targetWebView.parent !== hostContainer) {
+                if (attachedTabId.isNotEmpty() && attachedTabId != tabId) {
+                    tabWebViewPool.peekWebView(attachedTabId)?.let { previous ->
+                        thumbnailCache.captureFromWebView(attachedTabId, previous)
+                        previous.onPause()
+                    }
+                }
+                (targetWebView.parent as? ViewGroup)?.removeView(targetWebView)
+                hostContainer.removeAllViews()
+                hostContainer.addView(
+                    targetWebView,
+                    FrameLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.MATCH_PARENT
+                    )
+                )
+                targetWebView.onResume()
+                attachedTabId = tabId
+                onWebViewCreated(targetWebView)
+            }
+
+            val lastRequestedUrl = tabWebViewPool.getLastRequestedUrl(tabId)
+            if (url.isNotEmpty() && url != lastRequestedUrl) {
+                tabWebViewPool.setLastRequestedUrl(tabId, url)
+                targetWebView.loadUrl(url)
+            }
+        },
+        onRelease = { hostContainer ->
+            if (attachedTabId.isNotEmpty()) {
+                tabWebViewPool.peekWebView(attachedTabId)?.let { activeView ->
+                    thumbnailCache.captureFromWebView(attachedTabId, activeView)
+                    activeView.onPause()
+                }
+            }
+            hostContainer.removeAllViews()
+            attachedTabId = ""
         }
     )
 }
 
-/**
- * Option 3: Zero-resize document-bottom scroll coordinator.
- * Because WebView maintains a constant height, vertical scroll offsets never experience
- * resize clamping or layout-compensation feedback loops during fast flings.
- */
+@SuppressLint("SetJavaScriptEnabled")
+private fun createTabWebView(
+    context: Context,
+    tabId: String,
+    viewModel: BrowserViewModel,
+    tabWebViewPool: TabWebViewPool,
+    thumbnailCache: TabThumbnailCache
+): WebView {
+    return WebView(context).apply {
+        ViewCompat.setOnApplyWindowInsetsListener(this) { _, _ ->
+            WindowInsetsCompat.CONSUMED
+        }
+
+        settings.apply {
+            javaScriptEnabled = true
+            domStorageEnabled = true
+            useWideViewPort = true
+            loadWithOverviewMode = true
+            mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
+        }
+
+        val bottomCoordinator = DocumentBottomScrollCoordinator(this, tabId, viewModel)
+        val edgeProbeScheduler = EdgeProbeScheduler(this, tabId, viewModel, bottomCoordinator)
+        val thumbnailHandler = Handler(Looper.getMainLooper())
+        val captureThumbnailRunnable = Runnable {
+            thumbnailCache.captureFromWebView(tabId, this)
+        }
+        val scheduleThumbnailCapture: (Long) -> Unit = { delayMs ->
+            thumbnailHandler.removeCallbacks(captureThumbnailRunnable)
+            thumbnailHandler.postDelayed(captureThumbnailRunnable, delayMs)
+        }
+
+        var accumulatedScrollDy = 0
+        val scrollThresholdPx = (24 * context.resources.displayMetrics.density).toInt()
+
+        setOnScrollChangeListener { _, _, verticalScrollOffset, _, oldVerticalScrollOffset ->
+            val dy = verticalScrollOffset - oldVerticalScrollOffset
+            bottomCoordinator.onScrollChanged(verticalScrollOffset = verticalScrollOffset)
+            edgeProbeScheduler.onScroll()
+
+            if (verticalScrollOffset <= 0) {
+                accumulatedScrollDy = 0
+                viewModel.setToolbarCollapsed(false)
+                return@setOnScrollChangeListener
+            }
+
+            if ((dy > 0 && accumulatedScrollDy < 0) || (dy < 0 && accumulatedScrollDy > 0)) {
+                accumulatedScrollDy = 0
+            }
+            accumulatedScrollDy += dy
+
+            if (accumulatedScrollDy > scrollThresholdPx) {
+                viewModel.setToolbarCollapsed(true)
+                accumulatedScrollDy = 0
+            } else if (accumulatedScrollDy < -scrollThresholdPx) {
+                viewModel.setToolbarCollapsed(false)
+                accumulatedScrollDy = 0
+            }
+        }
+
+        addOnLayoutChangeListener { _, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom ->
+            val widthChanged = (right - left) != (oldRight - oldLeft)
+            val heightChanged = (bottom - top) != (oldBottom - oldTop)
+            if (widthChanged || heightChanged) {
+                bottomCoordinator.onViewportChanged()
+                edgeProbeScheduler.scheduleDebounced(80L)
+            }
+        }
+
+        webViewClient = CustomWebViewClient(
+            tabId = tabId,
+            viewModel = viewModel,
+            edgeProbeScheduler = edgeProbeScheduler,
+            bottomCoordinator = bottomCoordinator,
+            scheduleThumbnailCapture = scheduleThumbnailCapture,
+            onNavigatedUrl = { navigatedUrl ->
+                tabWebViewPool.setLastRequestedUrl(tabId, navigatedUrl)
+                viewModel.onPageUrlUpdated(tabId, navigatedUrl)
+            }
+        )
+
+        webChromeClient = object : WebChromeClient() {
+            override fun onProgressChanged(view: WebView?, newProgress: Int) {
+                viewModel.onProgressChanged(tabId, newProgress)
+                if (newProgress == 100) {
+                    edgeProbeScheduler.scheduleDebounced(80L)
+                    scheduleThumbnailCapture(260L)
+                }
+            }
+
+            override fun onReceivedTitle(view: WebView?, title: String?) {
+                if (!title.isNullOrBlank()) {
+                    viewModel.onPageTitleUpdated(tabId, title)
+                }
+            }
+        }
+    }
+}
+
 private class DocumentBottomScrollCoordinator(
     private val webView: WebView,
+    private val tabId: String,
     private val viewModel: BrowserViewModel
 ) {
     private val density = webView.resources.displayMetrics.density
@@ -162,8 +234,10 @@ private class DocumentBottomScrollCoordinator(
         lastReportedProgress = 0f
         lastJsScrollMetrics = null
         inBottomLookahead = false
-        viewModel.updateBottomCurtainProgress(0f)
-        viewModel.updateHasFixedBottomBar(false)
+        if (viewModel.uiState.value.activeTabId == tabId) {
+            viewModel.updateBottomCurtainProgress(0f)
+            viewModel.updateHasFixedBottomBar(false)
+        }
     }
 
     fun onJsScrollMetricsUpdated(metrics: WebScrollMetrics?) {
@@ -181,6 +255,7 @@ private class DocumentBottomScrollCoordinator(
     }
 
     private fun evaluateScrollPosition(verticalScrollOffset: Int) {
+        if (viewModel.uiState.value.activeTabId != tabId) return
         val viewportHeightPx = webView.height
         if (viewportHeightPx <= 0) return
 
@@ -228,6 +303,7 @@ private class DocumentBottomScrollCoordinator(
 
 private class EdgeProbeScheduler(
     private val webView: WebView,
+    private val tabId: String,
     private val viewModel: BrowserViewModel,
     private val bottomCoordinator: DocumentBottomScrollCoordinator
 ) {
@@ -242,9 +318,11 @@ private class EdgeProbeScheduler(
             webView = webView,
             isApproachingBottom = approachingBottom
         ) { probeResult ->
-            viewModel.updateTopRegionColor(probeResult.topColor)
-            viewModel.updateBottomRegionColor(probeResult.bottomColor)
-            viewModel.updateHasFixedBottomBar(probeResult.hasFixedBottomBar)
+            viewModel.updateTopRegionColor(tabId, probeResult.topColor)
+            viewModel.updateBottomRegionColor(tabId, probeResult.bottomColor)
+            if (viewModel.uiState.value.activeTabId == tabId) {
+                viewModel.updateHasFixedBottomBar(probeResult.hasFixedBottomBar)
+            }
             bottomCoordinator.onJsScrollMetricsUpdated(probeResult.scrollMetrics)
         }
     }
@@ -331,9 +409,11 @@ private class EdgeProbeScheduler(
 }
 
 private class CustomWebViewClient(
+    private val tabId: String,
     private val viewModel: BrowserViewModel,
     private val edgeProbeScheduler: EdgeProbeScheduler,
     private val bottomCoordinator: DocumentBottomScrollCoordinator,
+    private val scheduleThumbnailCapture: (Long) -> Unit,
     private val onNavigatedUrl: (String) -> Unit
 ) : WebViewClient() {
 
@@ -345,7 +425,9 @@ private class CustomWebViewClient(
         if (!url.isNullOrBlank() && url != "about:blank") {
             currentPageUrl = url
             onNavigatedUrl(url)
-            viewModel.setToolbarCollapsed(false)
+            if (viewModel.uiState.value.activeTabId == tabId) {
+                viewModel.setToolbarCollapsed(false)
+            }
             bottomCoordinator.resetForNavigation()
         }
     }
@@ -354,8 +436,9 @@ private class CustomWebViewClient(
         super.onPageCommitVisible(view, url)
         if (!url.isNullOrBlank() && url != "about:blank") {
             edgeProbeScheduler.scheduleDebounced(30L)
+            scheduleThumbnailCapture(120L)
             WebSnapshotColorExtractor.extractFromWebView(view, delayMs = 80L) { extractedColor ->
-                viewModel.onSnapshotColorReady(extractedColor)
+                viewModel.onSnapshotColorReady(tabId, extractedColor)
             }
         }
     }
@@ -365,13 +448,15 @@ private class CustomWebViewClient(
         if (!url.isNullOrBlank() && url != "about:blank") {
             edgeProbeScheduler.scheduleDebounced(140L)
             edgeProbeScheduler.attachDomMutationObserver()
+            scheduleThumbnailCapture(280L)
             WebSnapshotColorExtractor.extractFromWebView(view, delayMs = 350L) { extractedColor ->
-                viewModel.onSnapshotColorReady(extractedColor)
+                viewModel.onSnapshotColorReady(tabId, extractedColor)
             }
         }
 
         view?.let {
             viewModel.updateNavigationState(
+                tabId = tabId,
                 canGoBack = it.canGoBack(),
                 canGoForward = it.canGoForward()
             )
@@ -383,16 +468,18 @@ private class CustomWebViewClient(
         if (!url.isNullOrBlank() && url != "about:blank") {
             onNavigatedUrl(url)
             edgeProbeScheduler.scheduleDebounced(160L)
+            scheduleThumbnailCapture(240L)
         }
         if (!isReload) {
             WebSnapshotColorExtractor.extractFromWebView(view, delayMs = 400L) { extractedColor ->
                 if (extractedColor != null) {
-                    viewModel.updateSiteSeedColor(extractedColor)
+                    viewModel.updateSiteSeedColor(tabId, extractedColor)
                 }
             }
         }
         view?.let {
             viewModel.updateNavigationState(
+                tabId = tabId,
                 canGoBack = it.canGoBack(),
                 canGoForward = it.canGoForward()
             )

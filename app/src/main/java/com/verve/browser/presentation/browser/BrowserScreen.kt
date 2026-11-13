@@ -36,6 +36,7 @@ import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
@@ -58,14 +59,18 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import com.verve.browser.presentation.browser.components.ExpressiveBottomToolbar
 import com.verve.browser.presentation.browser.components.PageRevealCurtain
+import com.verve.browser.presentation.browser.components.QuickTabsScreen
 import com.verve.browser.presentation.browser.components.SearchSuggestionsList
 import com.verve.browser.presentation.browser.components.VerveWebView
+import com.verve.browser.presentation.browser.util.TabThumbnailCache
+import com.verve.browser.presentation.browser.util.TabWebViewPool
 import kotlinx.coroutines.delay
 import kotlin.math.max
 import kotlin.time.Duration.Companion.milliseconds
 
-private val CollapsedToolbarTotalHeight = 44.dp
+private val CollapsedToolbarTotalHeight = 35.dp
 private val ExpandedToolbarTotalHeight = 92.dp
+
 @Composable
 fun BrowserScreen(
     viewModel: BrowserViewModel,
@@ -73,9 +78,18 @@ fun BrowserScreen(
 ) {
     val uiState: BrowserUiState by viewModel.uiState.collectAsState()
     var webViewRef by remember { mutableStateOf<WebView?>(null) }
+    val tabWebViewPool = remember { TabWebViewPool() }
+    val thumbnailCache = remember { TabThumbnailCache() }
     val focusManager = LocalFocusManager.current
     val view = LocalView.current
     val density = LocalDensity.current
+
+    DisposableEffect(tabWebViewPool, thumbnailCache) {
+        onDispose {
+            tabWebViewPool.destroyAll()
+            thumbnailCache.clear()
+        }
+    }
 
     val isOnWebPage = uiState.currentUrl.isNotEmpty()
     val canGoBackInWeb = uiState.canGoBack || (webViewRef?.canGoBack() == true)
@@ -135,7 +149,6 @@ fun BrowserScreen(
         label = "activeToolbarCurtainHeight"
     )
 
-    // Keep bottom padding continuously active when a website has a fixed/sticky bottom navigation bar
     val fixedBottomBarProgress by animateFloatAsState(
         targetValue = if (isOnWebPage && uiState.hasFixedBottomBar && !uiState.isSearchFocused) 1f else 0f,
         animationSpec = spring(
@@ -155,8 +168,8 @@ fun BrowserScreen(
     val progressiveBottomShiftPx = with(density) { progressiveBottomCurtainHeightDp.roundToPx() }
 
     if (!view.isInEditMode) {
-        val isTopLight = targetTopColor.luminance() > 0.5f
-        val isBottomLight = targetBottomColor.luminance() > 0.5f
+        val isTopLight = if (uiState.isTabSwitcherOpen) false else targetTopColor.luminance() > 0.5f
+        val isBottomLight = if (uiState.isTabSwitcherOpen) false else targetBottomColor.luminance() > 0.5f
         SideEffect {
             val window = (view.context as? Activity)?.window ?: return@SideEffect
             val controller = WindowInsetsControllerCompat(window, view)
@@ -165,14 +178,19 @@ fun BrowserScreen(
         }
     }
 
-    LaunchedEffect(uiState.currentUrl) {
+    LaunchedEffect(uiState.activeTabId, uiState.currentUrl) {
         if (uiState.currentUrl.isNotEmpty()) {
             delay(1500L.milliseconds)
             viewModel.onRevealTimeout()
         }
     }
 
-    BackHandler(enabled = uiState.isSearchFocused || isOnWebPage || canGoBackInWeb) {
+    BackHandler(enabled = uiState.isTabSwitcherOpen || uiState.isSearchFocused || isOnWebPage || canGoBackInWeb) {
+        if (uiState.isTabSwitcherOpen) {
+            viewModel.closeTabSwitcher()
+            return@BackHandler
+        }
+
         if (uiState.isSearchFocused) {
             focusManager.clearFocus()
             viewModel.onSearchFocusChanged(false)
@@ -183,7 +201,10 @@ fun BrowserScreen(
         if (webView != null && webView.canGoBack()) {
             webView.goBack()
         } else {
+            val activeId = uiState.activeTabId
             webViewRef = null
+            tabWebViewPool.resetTab(activeId)
+            thumbnailCache.remove(activeId)
             viewModel.navigateHome()
         }
     }
@@ -194,8 +215,6 @@ fun BrowserScreen(
             .background(defaultRegionColor)
     ) {
         // LAYER 1: Constant-Height Webpage Viewport
-        // Never resizes during scroll/flings; lifts smoothly upward by progressiveBottomShiftPx
-        // when at the document bottom OR when the site has a fixed bottom navigation bar.
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -205,8 +224,11 @@ fun BrowserScreen(
         ) {
             if (isOnWebPage) {
                 VerveWebView(
+                    tabId = uiState.activeTabId,
                     url = uiState.currentUrl,
                     viewModel = viewModel,
+                    tabWebViewPool = tabWebViewPool,
+                    thumbnailCache = thumbnailCache,
                     onWebViewCreated = { webViewRef = it },
                     modifier = Modifier
                         .fillMaxSize()
@@ -241,7 +263,7 @@ fun BrowserScreen(
             )
         }
 
-        // Focused Search Overlay Backdrop (surfaceContainerLow)
+        // Focused Search Overlay Backdrop
         AnimatedVisibility(
             visible = uiState.isSearchFocused,
             enter = fadeIn(tween(180)),
@@ -292,7 +314,12 @@ fun BrowserScreen(
                 inputText = uiState.searchInput,
                 onInputTextChange = viewModel::onSearchInputChanged,
                 onUrlSubmitted = viewModel::onUrlSubmitted,
-                onTabSwitcherClick = { /* open tab switcher */ },
+                onTabSwitcherClick = {
+                    val activeId = uiState.activeTabId
+                    val activeView = tabWebViewPool.peekWebView(activeId) ?: webViewRef
+                    thumbnailCache.captureFromWebView(activeId, activeView)
+                    viewModel.openTabSwitcher()
+                },
                 currentUrl = uiState.currentUrl,
                 isWebMode = isOnWebPage,
                 isCollapsed = uiState.isToolbarCollapsed,
@@ -306,6 +333,18 @@ fun BrowserScreen(
                 onSiteSettingsClick = { /* open site settings / adblock info */ },
                 onRefreshClick = { webViewRef?.reload() },
                 modifier = Modifier.fillMaxWidth()
+            )
+        }
+
+        // LAYER 4: Dedicated Card-Based Quick Tabs Switcher
+        if (uiState.isTabSwitcherOpen) {
+            QuickTabsScreen(
+                tabs = uiState.tabs,
+                activeTabId = uiState.activeTabId,
+                thumbnailProvider = thumbnailCache::get,
+                onBackClick = viewModel::closeTabSwitcher,
+                onNewTabClick = viewModel::closeTabSwitcher,
+                modifier = Modifier.fillMaxSize()
             )
         }
     }
