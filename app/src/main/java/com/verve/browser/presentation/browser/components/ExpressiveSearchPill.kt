@@ -1,5 +1,6 @@
 package com.verve.browser.presentation.browser.components
 
+import android.net.Uri
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -49,7 +50,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.lerp
 import androidx.compose.ui.unit.sp
-import androidx.core.net.toUri
 import com.verve.browser.presentation.browser.util.DropShadow
 
 @Composable
@@ -83,7 +83,7 @@ fun ExpressiveSearchPill(
     )
     val resolvedExpand = (expandProgress ?: internalExpandProgress).coerceAtLeast(0f)
     val clampedExpand = resolvedExpand.coerceIn(0f, 1f)
-    val pillHeight = lerp(38.dp, 72.dp, resolvedExpand.coerceIn(0f, 1.03f))
+    val pillHeight = lerp(30.dp, 72.dp, resolvedExpand.coerceIn(0f, 1.03f))
     val iconSlidePx = with(density) { 10.dp.toPx() }
 
     val submitAction = {
@@ -112,8 +112,8 @@ fun ExpressiveSearchPill(
         if (isWebMode && !isEditingUrl) {
             val iconProgress = ((clampedExpand - 0.30f) / 0.70f).coerceIn(0f, 1f)
             val iconScale = 0.68f + 0.32f * iconProgress
-            val domainHorizontalPadding = lerp(18.dp, 54.dp, clampedExpand)
-            val domainFontSize = lerp(13.sp, 17.sp, clampedExpand)
+            val domainHorizontalPadding = lerp(14.dp, 54.dp, clampedExpand)
+            val domainFontSize = lerp(12.sp, 17.sp, clampedExpand)
 
             Box(modifier = Modifier.fillMaxSize()) {
                 IconButton(
@@ -140,7 +140,6 @@ fun ExpressiveSearchPill(
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
-                        .padding(horizontal = domainHorizontalPadding)
                         .clickable(
                             interactionSource = remember { MutableInteractionSource() },
                             indication = null
@@ -151,7 +150,8 @@ fun ExpressiveSearchPill(
                                 onInputTextChange(currentUrl)
                                 isEditingUrl = true
                             }
-                        },
+                        }
+                        .padding(horizontal = domainHorizontalPadding),
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
@@ -254,7 +254,7 @@ fun ExpressiveSearchPill(
 
 internal fun extractDisplayDomain(url: String): String {
     return runCatching {
-        val host = url.toUri().host
+        val host = Uri.parse(url).host
         if (!host.isNullOrBlank()) {
             host.removePrefix("www.")
         } else {

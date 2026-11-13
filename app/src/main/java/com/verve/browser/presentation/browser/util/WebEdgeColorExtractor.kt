@@ -17,7 +17,8 @@ data class WebScrollMetrics(
 data class WebEdgeProbeResult(
     val topColor: Color?,
     val bottomColor: Color?,
-    val scrollMetrics: WebScrollMetrics?
+    val scrollMetrics: WebScrollMetrics?,
+    val hasFixedBottomBar: Boolean = false
 )
 
 object WebEdgeColorExtractor {
@@ -142,6 +143,51 @@ object WebEdgeColorExtractor {
                     return { rgb: best.rgb, opaque: best.opaque, complex };
                 };
 
+                // Detect persistent fixed/sticky bottom navigation bars
+                const detectFixedBottomBar = () => {
+                    const xs = [
+                        Math.floor(w * 0.15),
+                        Math.floor(w * 0.50),
+                        Math.floor(w * 0.85)
+                    ];
+                    const probeY = Math.max(0, h - 6);
+                    const seen = new Set();
+                    for (let xi = 0; xi < xs.length; xi++) {
+                        const stack = document.elementsFromPoint ? document.elementsFromPoint(xs[xi], probeY) : [];
+                        for (let i = 0; i < stack.length; i++) {
+                            let el = stack[i];
+                            while (el && el !== document.body && el !== document.documentElement) {
+                                if (!seen.has(el)) {
+                                    seen.add(el);
+                                    const style = window.getComputedStyle(el);
+                                    if (style && style.display !== 'none' && style.visibility !== 'hidden') {
+                                        const pos = style.position;
+                                        if (pos === 'fixed' || pos === 'sticky') {
+                                            const opacity = parseFloat(style.opacity);
+                                            if (isNaN(opacity) || opacity > 0.15) {
+                                                const rect = el.getBoundingClientRect();
+                                                const isBottomAnchored = rect.bottom >= h - 6 && rect.bottom <= h + 6 && rect.top < h - 12;
+                                                const isBarSized = rect.width >= w * 0.65 && rect.height >= 28 && rect.height <= Math.min(140, h * 0.25);
+                                                if (isBottomAnchored && isBarSized) {
+                                                    const bg = parseRgba(style.backgroundColor);
+                                                    const hasBg = bg[3] >= 0.35 || (style.backgroundImage && style.backgroundImage !== 'none');
+                                                    const hasNavItems = el.matches('nav, [role="navigation"], [role="tablist"], [role="menubar"]') ||
+                                                        el.querySelectorAll('a, button, [role="tab"], [role="button"]').length >= 2;
+                                                    if (hasBg || hasNavItems) {
+                                                        return true;
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                el = el.parentElement;
+                            }
+                        }
+                    }
+                    return false;
+                };
+
                 // Pre-resolve the webpage's true footer background before it scrolls into view
                 const resolveDocumentFooter = () => {
                     const candidates = [];
@@ -186,7 +232,8 @@ object WebEdgeColorExtractor {
 
                 const top = sampleEdge(Math.min(3, Math.max(0, h - 1)));
                 const bottom = sampleEdge(Math.max(0, h - 3));
-                const footerRgb = resolveDocumentFooter();
+                const hasFixedBottomBar = detectFixedBottomBar();
+                const footerRgb = hasFixedBottomBar ? null : resolveDocumentFooter();
 
                 const metaTheme = document.querySelector('meta[name="theme-color"]');
                 const themeColor = metaTheme ? (metaTheme.getAttribute('content') || '').trim().slice(0, 32) : '';
@@ -199,6 +246,7 @@ object WebEdgeColorExtractor {
                     bo: bottom.opaque,
                     bc: bottom.complex,
                     f: footerRgb,
+                    fb: hasFixedBottomBar,
                     m: themeColor,
                     vh: h,
                     sh: sh,
@@ -240,14 +288,15 @@ object WebEdgeColorExtractor {
                 domTop = null,
                 domBottom = null,
                 metaTheme = null,
-                scrollMetrics = null
+                scrollMetrics = null,
+                hasFixedBottomBar = false
             )
         }
 
         return runCatching {
             val unquoted = unquoteJsJsonString(rawResult)
             if (unquoted.isEmpty() || unquoted.length > MAX_PAYLOAD_LENGTH) {
-                return@runCatching WebEdgeProbeResult(null, null, null)
+                return@runCatching WebEdgeProbeResult(null, null, null, false)
             }
 
             val json = JSONObject(unquoted)
@@ -259,6 +308,7 @@ object WebEdgeColorExtractor {
             val bottomOpaque = json.optBoolean("bo", false)
             val bottomComplex = json.optBoolean("bc", false)
             val footerRgb = parseRgbArray(json.optJSONArray("f"))
+            val hasFixedBottomBar = json.optBoolean("fb", false)
 
             val metaTheme = parseCssColorHex(json.optString("m", ""))
 
@@ -276,14 +326,14 @@ object WebEdgeColorExtractor {
                 null
             }
 
-            val resolvedDomBottom = if (isApproachingBottom && footerRgb != null) {
+            val resolvedDomBottom = if (!hasFixedBottomBar && isApproachingBottom && footerRgb != null) {
                 footerRgb
             } else {
                 domBottom ?: footerRgb
             }
 
             val needTopStrip = topComplex || !topOpaque || domTop == null
-            val needBottomStrip = (!isApproachingBottom || footerRgb == null) &&
+            val needBottomStrip = (hasFixedBottomBar || !isApproachingBottom || footerRgb == null) &&
                     (bottomComplex || !bottomOpaque || resolvedDomBottom == null)
 
             if (needTopStrip || needBottomStrip) {
@@ -294,17 +344,19 @@ object WebEdgeColorExtractor {
                     domTop = domTop,
                     domBottom = resolvedDomBottom,
                     metaTheme = metaTheme,
-                    scrollMetrics = scrollMetrics
+                    scrollMetrics = scrollMetrics,
+                    hasFixedBottomBar = hasFixedBottomBar
                 )
             } else {
                 WebEdgeProbeResult(
                     topColor = domTop,
                     bottomColor = resolvedDomBottom,
-                    scrollMetrics = scrollMetrics
+                    scrollMetrics = scrollMetrics,
+                    hasFixedBottomBar = hasFixedBottomBar
                 )
             }
         }.getOrElse {
-            WebEdgeProbeResult(null, null, null)
+            WebEdgeProbeResult(null, null, null, false)
         }
     }
 
@@ -315,7 +367,8 @@ object WebEdgeColorExtractor {
         domTop: Color?,
         domBottom: Color?,
         metaTheme: Color?,
-        scrollMetrics: WebScrollMetrics?
+        scrollMetrics: WebScrollMetrics?,
+        hasFixedBottomBar: Boolean
     ): WebEdgeProbeResult {
         val topStripColor = if (needTop) {
             sampleRenderedEdgeStrip(webView, isTop = true) ?: domTop ?: metaTheme
@@ -332,7 +385,8 @@ object WebEdgeColorExtractor {
         return WebEdgeProbeResult(
             topColor = topStripColor,
             bottomColor = bottomStripColor,
-            scrollMetrics = scrollMetrics
+            scrollMetrics = scrollMetrics,
+            hasFixedBottomBar = hasFixedBottomBar
         )
     }
 

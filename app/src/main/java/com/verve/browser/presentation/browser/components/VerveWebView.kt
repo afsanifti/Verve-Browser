@@ -163,6 +163,7 @@ private class DocumentBottomScrollCoordinator(
         lastJsScrollMetrics = null
         inBottomLookahead = false
         viewModel.updateBottomCurtainProgress(0f)
+        viewModel.updateHasFixedBottomBar(false)
     }
 
     fun onJsScrollMetricsUpdated(metrics: WebScrollMetrics?) {
@@ -243,6 +244,7 @@ private class EdgeProbeScheduler(
         ) { probeResult ->
             viewModel.updateTopRegionColor(probeResult.topColor)
             viewModel.updateBottomRegionColor(probeResult.bottomColor)
+            viewModel.updateHasFixedBottomBar(probeResult.hasFixedBottomBar)
             bottomCoordinator.onJsScrollMetricsUpdated(probeResult.scrollMetrics)
         }
     }

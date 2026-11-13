@@ -7,6 +7,7 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -63,9 +64,8 @@ import kotlinx.coroutines.delay
 import kotlin.math.max
 import kotlin.time.Duration.Companion.milliseconds
 
-private val CollapsedToolbarTotalHeight = 54.dp
+private val CollapsedToolbarTotalHeight = 44.dp
 private val ExpandedToolbarTotalHeight = 92.dp
-
 @Composable
 fun BrowserScreen(
     viewModel: BrowserViewModel,
@@ -121,7 +121,6 @@ fun BrowserScreen(
         label = "adaptiveBottomRegionColor"
     )
 
-    // Option 3: Match the floating toolbar's active height (collapsed 54.dp vs expanded 92.dp)
     val isToolbarEffectivelyCollapsed = isOnWebPage && uiState.isToolbarCollapsed && !uiState.isSearchFocused
     val activeToolbarHeightDp by animateDpAsState(
         targetValue = if (isToolbarEffectivelyCollapsed) {
@@ -136,8 +135,18 @@ fun BrowserScreen(
         label = "activeToolbarCurtainHeight"
     )
 
+    // Keep bottom padding continuously active when a website has a fixed/sticky bottom navigation bar
+    val fixedBottomBarProgress by animateFloatAsState(
+        targetValue = if (isOnWebPage && uiState.hasFixedBottomBar && !uiState.isSearchFocused) 1f else 0f,
+        animationSpec = spring(
+            dampingRatio = 0.78f,
+            stiffness = 500f
+        ),
+        label = "fixedBottomBarCurtainProgress"
+    )
+
     val effectiveCurtainProgress = if (isOnWebPage && !uiState.isSearchFocused) {
-        uiState.bottomCurtainProgress.coerceIn(0f, 1f)
+        max(uiState.bottomCurtainProgress, fixedBottomBarProgress).coerceIn(0f, 1f)
     } else {
         0f
     }
@@ -186,7 +195,7 @@ fun BrowserScreen(
     ) {
         // LAYER 1: Constant-Height Webpage Viewport
         // Never resizes during scroll/flings; lifts smoothly upward by progressiveBottomShiftPx
-        // as the document bottom is reached so final footer content clears the curtain.
+        // when at the document bottom OR when the site has a fixed bottom navigation bar.
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -290,7 +299,9 @@ fun BrowserScreen(
                 isSearchFocused = uiState.isSearchFocused,
                 bottomWindowInsets = WindowInsets(0, 0, 0, 0),
                 onSearchFocusChanged = viewModel::onSearchFocusChanged,
-                onCollapsedChange = viewModel::setToolbarCollapsed,
+                onCollapsedChange = { collapsed ->
+                    viewModel.setToolbarCollapsed(collapsed = collapsed, isManual = true)
+                },
                 onLeftActionClick = { /* open page menu sheet */ },
                 onSiteSettingsClick = { /* open site settings / adblock info */ },
                 onRefreshClick = { webViewRef?.reload() },

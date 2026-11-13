@@ -44,7 +44,9 @@ class BrowserViewModel(
             }
             state.copy(
                 isSearchFocused = focused,
-                searchSuggestions = initialSuggestions
+                searchSuggestions = initialSuggestions,
+                isToolbarCollapsed = if (focused) false else state.isToolbarCollapsed,
+                isToolbarManuallyCollapsed = if (focused) false else state.isToolbarManuallyCollapsed
             )
         }
     }
@@ -118,13 +120,30 @@ class BrowserViewModel(
             }.getOrDefault(emptyList())
         }
 
-    fun setToolbarCollapsed(collapsed: Boolean) {
+    fun setToolbarCollapsed(collapsed: Boolean, isManual: Boolean = false) {
         _uiState.update { state ->
-            val targetCollapsed = if (state.currentUrl.isEmpty() || state.isSearchFocused) false else collapsed
-            if (state.isToolbarCollapsed == targetCollapsed) {
-                state
+            if (state.currentUrl.isEmpty() || state.isSearchFocused) {
+                if (!state.isToolbarCollapsed && !state.isToolbarManuallyCollapsed) {
+                    state
+                } else {
+                    state.copy(
+                        isToolbarCollapsed = false,
+                        isToolbarManuallyCollapsed = false
+                    )
+                }
+            } else if (isManual) {
+                state.copy(
+                    isToolbarCollapsed = collapsed,
+                    isToolbarManuallyCollapsed = collapsed
+                )
             } else {
-                state.copy(isToolbarCollapsed = targetCollapsed)
+                if (state.isToolbarManuallyCollapsed && !collapsed) {
+                    state
+                } else if (state.isToolbarCollapsed == collapsed) {
+                    state
+                } else {
+                    state.copy(isToolbarCollapsed = collapsed)
+                }
             }
         }
     }
@@ -141,6 +160,17 @@ class BrowserViewModel(
                 state
             } else {
                 state.copy(bottomCurtainProgress = normalized)
+            }
+        }
+    }
+
+    fun updateHasFixedBottomBar(hasBar: Boolean) {
+        _uiState.update { state ->
+            val target = if (state.currentUrl.isEmpty()) false else hasBar
+            if (state.hasFixedBottomBar == target) {
+                state
+            } else {
+                state.copy(hasFixedBottomBar = target)
             }
         }
     }
@@ -206,8 +236,10 @@ class BrowserViewModel(
                 topRegionColor = null,
                 bottomRegionColor = null,
                 bottomCurtainProgress = 0f,
+                hasFixedBottomBar = false,
                 isPageReadyToReveal = false,
                 isToolbarCollapsed = false,
+                isToolbarManuallyCollapsed = false,
                 canGoBack = false,
                 canGoForward = false
             )
@@ -249,8 +281,10 @@ class BrowserViewModel(
                 topRegionColor = null,
                 bottomRegionColor = null,
                 bottomCurtainProgress = 0f,
+                hasFixedBottomBar = false,
                 isPageReadyToReveal = false,
-                isToolbarCollapsed = false
+                isToolbarCollapsed = false,
+                isToolbarManuallyCollapsed = false
             )
         }
     }

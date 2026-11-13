@@ -12,8 +12,10 @@ data class BrowserUiState(
     val topRegionColor: Color? = null,
     val bottomRegionColor: Color? = null,
     val bottomCurtainProgress: Float = 0f,
+    val hasFixedBottomBar: Boolean = false,
     val isPageReadyToReveal: Boolean = false,
     val isToolbarCollapsed: Boolean = false,
+    val isToolbarManuallyCollapsed: Boolean = false,
     val isLoading: Boolean = false,
     val loadingProgress: Int = 0,
     val blockedAdsCount: Int = 0,
@@ -21,7 +23,7 @@ data class BrowserUiState(
     val canGoForward: Boolean = false
 ) {
     val isAtPageBottom: Boolean
-        get() = bottomCurtainProgress >= 0.99f
+        get() = bottomCurtainProgress >= 0.99f || hasFixedBottomBar
 
     companion object {
         val DEFAULT_SEARCH_SUGGESTIONS = listOf(

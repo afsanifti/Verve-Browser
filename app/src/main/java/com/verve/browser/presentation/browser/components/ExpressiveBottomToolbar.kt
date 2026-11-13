@@ -87,13 +87,22 @@ fun ExpressiveBottomToolbar(
         label = "rightButtonProgress"
     )
 
-    val verticalPadding by animateDpAsState(
-        targetValue = if (effectiveCollapsed) 8.dp else 10.dp,
+    val topPadding by animateDpAsState(
+        targetValue = if (effectiveCollapsed) 4.dp else 10.dp,
         animationSpec = spring(
             dampingRatio = 0.78f,
             stiffness = 500f
         ),
-        label = "toolbarVerticalPadding"
+        label = "toolbarTopPadding"
+    )
+
+    val bottomPadding by animateDpAsState(
+        targetValue = if (effectiveCollapsed) 2.dp else 10.dp,
+        animationSpec = spring(
+            dampingRatio = 0.78f,
+            stiffness = 500f
+        ),
+        label = "toolbarBottomPadding"
     )
 
     val displayDomain = remember(currentUrl) { extractDisplayDomain(currentUrl) }
@@ -114,7 +123,12 @@ fun ExpressiveBottomToolbar(
         modifier = modifier
             .fillMaxWidth()
             .windowInsetsPadding(bottomWindowInsets)
-            .padding(horizontal = 16.dp, vertical = verticalPadding)
+            .padding(
+                start = 16.dp,
+                end = 16.dp,
+                top = topPadding,
+                bottom = bottomPadding
+            )
             .pointerInput(isWebMode, effectiveCollapsed, isSearchFocused) {
                 if (!isWebMode || isSearchFocused) return@pointerInput
                 detectVerticalDragGestures(
