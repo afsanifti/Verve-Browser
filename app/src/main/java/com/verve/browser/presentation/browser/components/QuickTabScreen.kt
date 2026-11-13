@@ -41,12 +41,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.PathParser
@@ -60,11 +58,13 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.unit.times
 import androidx.compose.ui.zIndex
 import com.verve.browser.presentation.browser.BrowserTab
+import com.verve.browser.presentation.theme.VerveBrowserTheme
 
-private val QuickTabsBackdropBase = Color(0xFF1A191D)
-private val QuickTabsForegroundText = Color(0xFFF2F0F5)
-private val QuickTabsMutedText = Color(0xFFCAC4D0)
 private const val MaxVisibleBackgroundCards = 3
+private const val ReferenceDeviceWidthDp = 412f
+private const val ReferenceCardWidthDp = 269f
+private const val ReferenceCardHeightDp = 564f
+private const val ReferenceCardAspectRatio = ReferenceCardWidthDp / ReferenceCardHeightDp
 
 @Composable
 fun QuickTabsScreen(
@@ -79,76 +79,77 @@ fun QuickTabsScreen(
     onSettingsClick: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
-    val primaryContainer = MaterialTheme.colorScheme.primaryContainer
-    val backdropColor = remember(primaryContainer) {
-        lerp(QuickTabsBackdropBase, primaryContainer, 0.05f)
-    }
-
-    val orderedTabs = remember(tabs, activeTabId) {
-        val active = tabs.firstOrNull { it.id == activeTabId } ?: tabs.firstOrNull()
-        if (active == null) {
-            emptyList()
-        } else {
-            listOf(active) + tabs.filter { it.id != active.id }
+    // Always use the system wallpaper/theme engine rather than the active webpage's seed color
+    VerveBrowserTheme(siteSeedColor = null) {
+        val orderedTabs = remember(tabs, activeTabId) {
+            val active = tabs.firstOrNull { it.id == activeTabId } ?: tabs.firstOrNull()
+            if (active == null) {
+                emptyList()
+            } else {
+                listOf(active) + tabs.filter { it.id != active.id }
+            }
         }
-    }
 
-    val topSafeInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Top)
-    val bottomNavInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Bottom)
+        val topSafeInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Top)
+        val bottomNavInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Bottom)
 
-    Surface(
-        modifier = modifier.fillMaxSize(),
-        color = backdropColor
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .windowInsetsPadding(topSafeInsets)
+        Surface(
+            modifier = modifier.fillMaxSize(),
+            color = MaterialTheme.colorScheme.surfaceContainerLow
         ) {
-            QuickTabsTopBar(
-                onBackClick = onBackClick,
-                onHistoryClick = onHistoryClick,
-                onLayoutToggleClick = onLayoutToggleClick
-            )
-
-            BoxWithConstraints(
+            Column(
                 modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp),
-                contentAlignment = Alignment.Center
+                    .fillMaxSize()
+                    .windowInsetsPadding(topSafeInsets)
             ) {
-                val isLandscape = maxWidth > maxHeight
-                val chipAndGapHeight = 46.dp
-                val availableCardHeight = (maxHeight - chipAndGapHeight).coerceAtLeast(140.dp)
+                QuickTabsTopBar(
+                    onBackClick = onBackClick,
+                    onHistoryClick = onHistoryClick,
+                    onLayoutToggleClick = onLayoutToggleClick
+                )
 
-                val cardWidth: Dp
-                val cardHeight: Dp
-                if (isLandscape) {
-                    cardHeight = (availableCardHeight * 0.92f).coerceIn(140.dp, 300.dp)
-                    cardWidth = (cardHeight * 1.15f).coerceIn(180.dp, (maxWidth * 0.52f).coerceAtLeast(180.dp))
-                } else {
-                    val maxAllowedWidth = (maxWidth * 0.72f).coerceAtLeast(180.dp)
-                    val idealHeight = (availableCardHeight * 0.94f).coerceIn(220.dp, 560.dp)
-                    cardWidth = (idealHeight * 0.58f).coerceAtMost(maxAllowedWidth)
-                    cardHeight = (cardWidth / 0.58f).coerceAtMost(availableCardHeight)
+                BoxWithConstraints(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    val isLandscape = maxWidth > maxHeight
+                    val chipAndGapHeight = 46.dp
+                    val availableCardHeight = (maxHeight - chipAndGapHeight).coerceAtLeast(160.dp)
+
+                    val cardWidth: Dp
+                    val cardHeight: Dp
+                    if (isLandscape) {
+                        cardHeight = (availableCardHeight * 0.92f).coerceIn(150.dp, 310.dp)
+                        cardWidth = (cardHeight * 1.15f).coerceIn(180.dp, (maxWidth * 0.52f).coerceAtLeast(180.dp))
+                    } else {
+                        val fullScreenWidth = maxWidth + 32.dp
+                        val proportionalWidth = fullScreenWidth * (ReferenceCardWidthDp / ReferenceDeviceWidthDp)
+                        val proportionalHeight = proportionalWidth / ReferenceCardAspectRatio
+                        val maxAllowedHeight = (availableCardHeight * 0.89f).coerceAtLeast(220.dp)
+
+                        cardHeight = proportionalHeight.coerceAtMost(maxAllowedHeight)
+                        cardWidth = (cardHeight * ReferenceCardAspectRatio).coerceAtLeast(160.dp)
+                    }
+
+                    QuickTabsCardStack(
+                        tabs = orderedTabs,
+                        thumbnailProvider = thumbnailProvider,
+                        cardWidth = cardWidth,
+                        cardHeight = cardHeight,
+                        onActiveCardClick = onBackClick
+                    )
                 }
 
-                QuickTabsCardStack(
-                    tabs = orderedTabs,
-                    thumbnailProvider = thumbnailProvider,
-                    cardWidth = cardWidth,
-                    cardHeight = cardHeight,
-                    onActiveCardClick = onBackClick
+                QuickTabsBottomBar(
+                    onLayersClick = onTabGroupsClick,
+                    onNewTabClick = onNewTabClick,
+                    onSettingsClick = onSettingsClick,
+                    modifier = Modifier.windowInsetsPadding(bottomNavInsets)
                 )
             }
-
-            QuickTabsBottomBar(
-                onLayersClick = onTabGroupsClick,
-                onNewTabClick = onNewTabClick,
-                onSettingsClick = onSettingsClick,
-                modifier = Modifier.windowInsetsPadding(bottomNavInsets)
-            )
         }
     }
 }
@@ -171,7 +172,7 @@ private fun QuickTabsTopBar(
             Icon(
                 imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
                 contentDescription = "Back to browser",
-                tint = QuickTabsForegroundText,
+                tint = MaterialTheme.colorScheme.onSurface,
                 modifier = Modifier.size(24.dp)
             )
         }
@@ -180,7 +181,7 @@ private fun QuickTabsTopBar(
 
         Text(
             text = "Quick Tabs",
-            color = QuickTabsForegroundText,
+            color = MaterialTheme.colorScheme.onSurface,
             fontSize = 22.sp,
             fontWeight = FontWeight.Normal,
             maxLines = 1,
@@ -192,7 +193,7 @@ private fun QuickTabsTopBar(
             Icon(
                 imageVector = HistoryVectorIcon,
                 contentDescription = "History",
-                tint = QuickTabsMutedText,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.size(24.dp)
             )
         }
@@ -201,7 +202,7 @@ private fun QuickTabsTopBar(
             Icon(
                 imageVector = CarouselLayoutVectorIcon,
                 contentDescription = "Tab layout",
-                tint = QuickTabsMutedText,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.size(24.dp)
             )
         }
@@ -220,7 +221,6 @@ private fun QuickTabsCardStack(
     val activeTab = tabs.firstOrNull() ?: return
     val backgroundTabs = tabs.drop(1).take(MaxVisibleBackgroundCards)
 
-    // Centered (0.dp) when only 1 tab is open; fans out left only when 2+ tabs exist
     val foregroundHorizontalOffset = when (backgroundTabs.size) {
         0 -> 0.dp
         1 -> 14.dp
@@ -239,7 +239,7 @@ private fun QuickTabsCardStack(
             val scale = (1f - depth * 0.055f).coerceAtLeast(0.80f)
             val horizontalStep = foregroundHorizontalOffset - (24.dp * depth)
             val verticalStep = (chipReserveHeight / 2f) + (depth * 4.dp)
-            val dimAlpha = (depth * 0.16f).coerceAtMost(0.45f)
+            val dimAlpha = (depth * 0.10f).coerceAtMost(0.30f)
 
             BackgroundStackedTabCard(
                 tab = bgTab,
@@ -346,7 +346,7 @@ private fun ForegroundTabCard(
             .height(cardHeight),
         shape = RoundedCornerShape(24.dp),
         color = cardSurfaceColor,
-        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.14f)),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
         shadowElevation = 8.dp
     ) {
         Box(modifier = Modifier.fillMaxSize()) {
@@ -394,7 +394,7 @@ private fun BackgroundStackedTabCard(
             .height(cardHeight),
         shape = RoundedCornerShape(24.dp),
         color = cardSurfaceColor,
-        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.10f)),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
         shadowElevation = 3.dp
     ) {
         Box(modifier = Modifier.fillMaxSize()) {
@@ -407,7 +407,7 @@ private fun BackgroundStackedTabCard(
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(Color.Black.copy(alpha = dimOverlayAlpha))
+                    .background(MaterialTheme.colorScheme.scrim.copy(alpha = dimOverlayAlpha))
             )
         }
     }
@@ -430,13 +430,7 @@ private fun TabCardThumbnailContent(
         return
     }
 
-    val surfaceColor = resolveCardSurfaceColor(tab)
-    val isDarkSurface = surfaceColor.luminance() < 0.4f
-    val primaryText = if (isDarkSurface) Color(0xFFE6E8EE) else Color(0xFF1C1B1F)
-    val secondaryText = if (isDarkSurface) Color(0xFF9AA0AC) else Color(0xFF5F6368)
-
     if (tab.url.isBlank()) {
-        // Clean New Tab preview card
         Column(
             modifier = modifier.padding(20.dp),
             verticalArrangement = Arrangement.Center,
@@ -459,7 +453,7 @@ private fun TabCardThumbnailContent(
             Spacer(modifier = Modifier.height(12.dp))
             Text(
                 text = "New Tab",
-                color = primaryText,
+                color = MaterialTheme.colorScheme.onSurface,
                 fontSize = 15.sp,
                 fontWeight = FontWeight.SemiBold,
                 textAlign = TextAlign.Center
@@ -467,13 +461,17 @@ private fun TabCardThumbnailContent(
             Spacer(modifier = Modifier.height(4.dp))
             Text(
                 text = "Search or enter address",
-                color = secondaryText,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
                 fontSize = 12.sp,
                 textAlign = TextAlign.Center
             )
         }
     } else {
-        // Fallback while a webpage is still loading or being restored
+        val surfaceColor = resolveCardSurfaceColor(tab)
+        val isDarkSurface = surfaceColor.luminance() < 0.4f
+        val primaryText = if (isDarkSurface) Color(0xFFE6E8EE) else Color(0xFF1C1B1F)
+        val secondaryText = if (isDarkSurface) Color(0xFF9AA0AC) else Color(0xFF5F6368)
+
         Column(
             modifier = modifier.padding(20.dp),
             verticalArrangement = Arrangement.Center,
@@ -514,9 +512,10 @@ private fun resolveTabChipLabel(tab: BrowserTab): String {
     return extractDisplayDomain(tab.url).ifBlank { tab.title.ifBlank { "Webpage" } }
 }
 
+@Composable
 private fun resolveCardSurfaceColor(tab: BrowserTab): Color {
-    if (tab.url.isBlank()) return Color(0xFF232228)
-    return tab.topRegionColor ?: tab.siteSeedColor ?: Color(0xFFFDFCFE)
+    if (tab.url.isBlank()) return MaterialTheme.colorScheme.surfaceContainerHigh
+    return tab.topRegionColor ?: tab.siteSeedColor ?: MaterialTheme.colorScheme.surfaceContainerLowest
 }
 
 @Composable
@@ -540,7 +539,7 @@ private fun QuickTabsBottomBar(
             Icon(
                 imageVector = LayersVectorIcon,
                 contentDescription = "Tab groups",
-                tint = QuickTabsMutedText,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.size(24.dp)
             )
         }
@@ -574,7 +573,7 @@ private fun QuickTabsBottomBar(
             Icon(
                 imageVector = Icons.Rounded.Settings,
                 contentDescription = "Settings",
-                tint = QuickTabsMutedText,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.size(24.dp)
             )
         }
