@@ -4,10 +4,10 @@
     <selectionStates>
       <SelectionState runConfigName="app">
         <option name="selectionMode" value="DROPDOWN" />
-        <DropdownSelection timestamp="2026-11-12T13:32:13.117825667Z">
+        <DropdownSelection timestamp="2026-11-13T08:19:30.870831638Z">
           <Target type="DEFAULT_BOOT">
             <handle>
-              <DeviceId pluginId="Default" identifier="serial=192.168.0.141:39215;connection=d0b135fa" />
+              <DeviceId pluginId="LocalEmulator" identifier="path=/home/knoight/.android/avd/Pixel_9.avd" />
             </handle>
           </Target>
         </DropdownSelection>

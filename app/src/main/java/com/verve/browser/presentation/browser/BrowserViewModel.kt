@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.verve.browser.domain.model.UrlCheckResult
 import com.verve.browser.domain.usecase.ShouldBlockUrlUseCase
+import com.verve.browser.presentation.browser.util.WebEdgeColorExtractor
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -64,7 +65,6 @@ class BrowserViewModel(
             return
         }
 
-        // Immediate local filter from recent searches while network query debounces
         val localMatches = currentState.recentSearches
             .filter { it.contains(query, ignoreCase = true) && !it.equals(query, ignoreCase = true) }
             .take(4)
@@ -128,6 +128,13 @@ class BrowserViewModel(
         }
     }
 
+    fun setAtPageBottom(atBottom: Boolean) {
+        _uiState.update { state ->
+            val target = if (state.currentUrl.isEmpty()) false else atBottom
+            if (state.isAtPageBottom == target) state else state.copy(isAtPageBottom = target)
+        }
+    }
+
     fun onPageUrlUpdated(url: String) {
         if (url.isNotBlank() && url != "about:blank") {
             _uiState.update {
@@ -156,6 +163,28 @@ class BrowserViewModel(
         _uiState.update { it.copy(siteSeedColor = color) }
     }
 
+    fun updateTopRegionColor(color: Color?) {
+        if (color == null) return
+        _uiState.update { state ->
+            if (WebEdgeColorExtractor.isPerceptuallySimilar(state.topRegionColor, color)) {
+                state
+            } else {
+                state.copy(topRegionColor = color)
+            }
+        }
+    }
+
+    fun updateBottomRegionColor(color: Color?) {
+        if (color == null) return
+        _uiState.update { state ->
+            if (WebEdgeColorExtractor.isPerceptuallySimilar(state.bottomRegionColor, color)) {
+                state
+            } else {
+                state.copy(bottomRegionColor = color)
+            }
+        }
+    }
+
     fun navigateHome() {
         suggestionJob?.cancel()
         _uiState.update {
@@ -164,6 +193,9 @@ class BrowserViewModel(
                 searchInput = "",
                 isSearchFocused = false,
                 siteSeedColor = null,
+                topRegionColor = null,
+                bottomRegionColor = null,
+                isAtPageBottom = false,
                 isPageReadyToReveal = false,
                 isToolbarCollapsed = false,
                 canGoBack = false,
@@ -204,6 +236,9 @@ class BrowserViewModel(
                 recentSearches = updatedRecents,
                 searchSuggestions = updatedRecents.take(4),
                 siteSeedColor = null,
+                topRegionColor = null,
+                bottomRegionColor = null,
+                isAtPageBottom = false,
                 isPageReadyToReveal = false,
                 isToolbarCollapsed = false
             )
