@@ -81,14 +81,14 @@ val AppTypography = Typography(
         letterSpacing = 0.sp
     ),
     titleLarge = TextStyle(
-        fontFamily = variableFontFamily(rond = 50f, grad = 0f, opsz = 22f, wdth = 100f),
+        fontFamily = variableFontFamily(rond = 100f, grad = 0f, opsz = 22f, wdth = 100f),
         fontWeight = FontWeight.Medium,
         fontSize = 22.sp,
         lineHeight = 28.sp,
         letterSpacing = 0.sp
     ),
     titleMedium = TextStyle(
-        fontFamily = variableFontFamily(rond = 50f, grad = 0f, opsz = 16f, wdth = 100f),
+        fontFamily = variableFontFamily(rond = 100f, grad = 0f, opsz = 16f, wdth = 100f),
         fontWeight = FontWeight.Medium,
         fontSize = 16.sp,
         lineHeight = 24.sp,

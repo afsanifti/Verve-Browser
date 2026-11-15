@@ -56,8 +56,14 @@ class BrowserViewModel(
     fun onPageTitleUpdated(tabId: String, title: String) =
         pageAppearanceController.onPageTitleUpdated(tabId = tabId, title = title)
 
+    fun onThemeExtractionStarted(tabId: String) =
+        pageAppearanceController.onThemeExtractionStarted(tabId = tabId)
+
     fun onSnapshotColorReady(tabId: String, color: Color?) =
         pageAppearanceController.onSnapshotColorReady(tabId = tabId, color = color)
+
+    fun onThemeGradientAnimationCompleted() =
+        pageAppearanceController.onThemeGradientAnimationCompleted()
 
     fun onRevealTimeout() = pageAppearanceController.onRevealTimeout()
 

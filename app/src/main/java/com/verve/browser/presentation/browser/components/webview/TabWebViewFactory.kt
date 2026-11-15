@@ -102,6 +102,7 @@ internal fun createTabWebView(
             }
             val targetUrl = this@apply.url.orEmpty()
             isColorExtractionInFlight = true
+            viewModel.onThemeExtractionStarted(tabId)
             WebSnapshotColorExtractor.extractFromWebView(this@apply, delayMs = 0L) { extractedColor ->
                 isColorExtractionInFlight = false
                 if (!isDestroyed) {

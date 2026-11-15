@@ -39,6 +39,19 @@ internal class PageAppearanceAndProgressController(
         }
     }
 
+    fun onThemeExtractionStarted(tabId: String) {
+        uiState.update { state ->
+            if (tabId == state.activeTabId) {
+                state.copy(
+                    isThemeExtracting = true,
+                    pendingSiteSeedColor = state.pendingSiteSeedColor ?: state.siteSeedColor
+                )
+            } else {
+                state
+            }
+        }
+    }
+
     fun onSnapshotColorReady(tabId: String, color: Color?) {
         uiState.update { state ->
             val updatedTabs = state.tabs.map { tab ->
@@ -49,19 +62,45 @@ internal class PageAppearanceAndProgressController(
                 }
             }
             if (tabId == state.activeTabId) {
-                state.copy(
-                    tabs = updatedTabs,
-                    siteSeedColor = color ?: state.siteSeedColor,
-                    isPageReadyToReveal = true
-                )
+                val resolvedColor = color ?: state.pendingSiteSeedColor ?: state.siteSeedColor
+                if (state.isThemeExtracting) {
+                    // Hold siteSeedColor until the pill gradient animation finishes
+                    state.copy(
+                        tabs = updatedTabs,
+                        pendingSiteSeedColor = resolvedColor,
+                        isThemeExtracting = false,
+                        isPageReadyToReveal = true
+                    )
+                } else {
+                    state.copy(
+                        tabs = updatedTabs,
+                        siteSeedColor = resolvedColor,
+                        pendingSiteSeedColor = resolvedColor,
+                        isPageReadyToReveal = true
+                    )
+                }
             } else {
                 state.copy(tabs = updatedTabs)
             }
         }
     }
 
+    fun onThemeGradientAnimationCompleted() {
+        uiState.update { state ->
+            state.copy(
+                siteSeedColor = state.pendingSiteSeedColor ?: state.siteSeedColor,
+                isThemeExtracting = false
+            )
+        }
+    }
+
     fun onRevealTimeout() {
-        uiState.update { it.copy(isPageReadyToReveal = true) }
+        uiState.update { state ->
+            state.copy(
+                isPageReadyToReveal = true,
+                isThemeExtracting = false
+            )
+        }
     }
 
     fun updateSiteSeedColor(tabId: String, color: Color?) {
@@ -70,7 +109,12 @@ internal class PageAppearanceAndProgressController(
                 if (tab.id == tabId) tab.copy(siteSeedColor = color) else tab
             }
             if (tabId == state.activeTabId) {
-                state.copy(tabs = updatedTabs, siteSeedColor = color)
+                state.copy(
+                    tabs = updatedTabs,
+                    siteSeedColor = color,
+                    pendingSiteSeedColor = color,
+                    isThemeExtracting = false
+                )
             } else {
                 state.copy(tabs = updatedTabs)
             }

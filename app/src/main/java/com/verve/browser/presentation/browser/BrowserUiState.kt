@@ -12,6 +12,8 @@ data class BrowserUiState(
     val searchSuggestions: List<String> = DEFAULT_SEARCH_SUGGESTIONS,
     val recentSearches: List<String> = DEFAULT_SEARCH_SUGGESTIONS,
     val siteSeedColor: Color? = null,
+    val pendingSiteSeedColor: Color? = null,
+    val isThemeExtracting: Boolean = false,
     val topRegionColor: Color? = null,
     val bottomRegionColor: Color? = null,
     val bottomCurtainProgress: Float = 0f,

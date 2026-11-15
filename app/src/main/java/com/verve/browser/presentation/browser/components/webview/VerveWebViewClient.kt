@@ -39,6 +39,7 @@ internal class VerveWebViewClient(
     private var isMainFrameLoading: Boolean = false
     private val attemptedFallbackUrls = HashSet<String>()
     private var pendingFallbackUrl: String? = null
+    private var pendingErrorPageUrl: String? = null
     private var isShowingErrorPage: Boolean = false
     private var consecutiveRenderCrashes: Int = 0
 
@@ -88,11 +89,21 @@ internal class VerveWebViewClient(
     override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
         super.onPageStarted(view, url, favicon)
         if (!url.isNullOrBlank() && url != "about:blank" && !url.startsWith("data:")) {
+            // Ignore the synthetic onPageStarted fired by renderLoadErrorPage's loadDataWithBaseURL
+            if (pendingErrorPageUrl != null && url == pendingErrorPageUrl) {
+                pendingErrorPageUrl = null
+                isShowingErrorPage = true
+                return
+            }
+
             isMainFrameLoading = true
             if (pendingFallbackUrl == null || url == pendingFallbackUrl) {
                 pendingFallbackUrl = null
                 isShowingErrorPage = false
             }
+
+            // Step 1: Begin the pill gradient sweep while holding the current bottom bar color
+            viewModel.onThemeExtractionStarted(tabId)
 
             val normalizedUrl = WebSnapshotColorExtractor.normalizeUrl(url)
             val cached = pageColorCache.get(normalizedUrl)
@@ -136,14 +147,18 @@ internal class VerveWebViewClient(
             val normalizedUrl = WebSnapshotColorExtractor.normalizeUrl(url)
             val cached = pageColorCache.get(normalizedUrl)
             if (cached != null) {
-                if (lastColorExtractedUrl != normalizedUrl) {
-                    lastColorExtractedUrl = normalizedUrl
-                    viewModel.onSnapshotColorReady(tabId, cached.color)
-                }
+                lastColorExtractedUrl = normalizedUrl
+                viewModel.onSnapshotColorReady(tabId, cached.color)
             } else if (lastColorExtractedUrl != normalizedUrl) {
+                // Steps 2-5: Capture snapshot -> extract color -> finish pill gradient -> commit color
                 lastColorExtractedUrl = normalizedUrl
                 scheduleSnapshotColorExtract(220L)
+            } else {
+                viewModel.onSnapshotColorReady(tabId, null)
             }
+        } else {
+            // Ensure any in-flight pill loading animation completes on blank or error pages
+            viewModel.onRevealTimeout()
         }
 
         view?.let {
@@ -167,10 +182,12 @@ internal class VerveWebViewClient(
                 pageColorCache.remove(newFullUrl)
                 lastColorExtractedUrl = ""
                 if (!isShowingErrorPage && !isMainFrameLoading) {
+                    viewModel.onThemeExtractionStarted(tabId)
                     lastColorExtractedUrl = newFullUrl
                     scheduleSnapshotColorExtract(220L)
                 }
             } else if (!isShowingErrorPage && !isMainFrameLoading && previousFullUrl != newFullUrl) {
+                viewModel.onThemeExtractionStarted(tabId)
                 val cached = pageColorCache.get(newFullUrl)
                 if (cached != null) {
                     WebSnapshotColorExtractor.cancel(view)
@@ -181,6 +198,8 @@ internal class VerveWebViewClient(
                     edgeProbeScheduler.scheduleDebounced(200L)
                     scheduleThumbnailCapture(360L)
                     scheduleSnapshotColorExtract(380L)
+                } else {
+                    viewModel.onSnapshotColorReady(tabId, null)
                 }
             }
         }
@@ -261,15 +280,12 @@ internal class VerveWebViewClient(
         consecutiveRenderCrashes = if (crashed) consecutiveRenderCrashes + 1 else 0
         val shouldReload = consecutiveRenderCrashes < 2
 
+        viewModel.onRevealTimeout()
         tabWebViewPool.handleRenderProcessGone(
             tabId = tabId,
             deadWebView = deadView,
             shouldReload = shouldReload
         )
-
-        if (!shouldReload) {
-            viewModel.onRevealTimeout()
-        }
         return true
     }
 
@@ -329,6 +345,7 @@ internal class VerveWebViewClient(
         description: String
     ) {
         isShowingErrorPage = true
+        pendingErrorPageUrl = failedUrl.takeIf { it.isNotBlank() }
         lastColorExtractedUrl = ""
         attemptedFallbackUrls.clear()
         val escapedUrl = escapeHtml(failedUrl)

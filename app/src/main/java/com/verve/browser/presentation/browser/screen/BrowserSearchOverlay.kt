@@ -104,6 +104,8 @@ internal fun BoxScope.BrowserSearchOverlay(
                 thumbnailCache.captureFromWebView(activeId, activeView)
                 viewModel.openTabSwitcher()
             },
+            isThemeLoading = uiState.isThemeExtracting,
+            onThemeAnimationCompleted = viewModel::onThemeGradientAnimationCompleted,
             currentUrl = uiState.currentUrl,
             isWebMode = isOnWebPage,
             isCollapsed = uiState.isToolbarCollapsed,
