@@ -142,7 +142,7 @@ internal class VerveWebViewClient(
                 }
             } else if (lastColorExtractedUrl != normalizedUrl) {
                 lastColorExtractedUrl = normalizedUrl
-                scheduleSnapshotColorExtract(180L)
+                scheduleSnapshotColorExtract(220L)
             }
         }
 
@@ -168,7 +168,7 @@ internal class VerveWebViewClient(
                 lastColorExtractedUrl = ""
                 if (!isShowingErrorPage && !isMainFrameLoading) {
                     lastColorExtractedUrl = newFullUrl
-                    scheduleSnapshotColorExtract(180L)
+                    scheduleSnapshotColorExtract(220L)
                 }
             } else if (!isShowingErrorPage && !isMainFrameLoading && previousFullUrl != newFullUrl) {
                 val cached = pageColorCache.get(newFullUrl)
@@ -179,8 +179,8 @@ internal class VerveWebViewClient(
                 } else if (lastColorExtractedUrl != newFullUrl) {
                     lastColorExtractedUrl = newFullUrl
                     edgeProbeScheduler.scheduleDebounced(200L)
-                    scheduleThumbnailCapture(320L)
-                    scheduleSnapshotColorExtract(240L)
+                    scheduleThumbnailCapture(360L)
+                    scheduleSnapshotColorExtract(380L)
                 }
             }
         }
@@ -224,7 +224,6 @@ internal class VerveWebViewClient(
         if (request?.isForMainFrame != true) return
 
         val failedUrl = request.url?.toString().orEmpty()
-        // Ignore secondary error callbacks for a request that already triggered a fallback load
         if (pendingFallbackUrl != null && failedUrl != pendingFallbackUrl) {
             return
         }
