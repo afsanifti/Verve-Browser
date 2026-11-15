@@ -16,7 +16,8 @@ internal class EdgeProbeScheduler(
     private val viewModel: BrowserViewModel,
     private val bottomCoordinator: DocumentBottomScrollCoordinator,
     private val isActivelyScrolling: () -> Boolean = { false },
-    private val canRunProbe: () -> Boolean = { webView.isAttachedToWindow && webView.windowToken != null }
+    private val canRunProbe: () -> Boolean = { webView.isAttachedToWindow && webView.windowToken != null },
+    private val onDomVisualMutation: () -> Unit = {}
 ) {
     private val handler = Handler(Looper.getMainLooper())
     private var lastProbeTimestampMs = 0L
@@ -91,6 +92,7 @@ internal class EdgeProbeScheduler(
                 override fun onMessage(port: WebMessagePort?, message: WebMessage?) {
                     if (!isDisposed) {
                         scheduleDebounced(150L)
+                        onDomVisualMutation()
                     }
                 }
             }, handler)

@@ -5,6 +5,7 @@ import android.content.Context
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewConfiguration
@@ -66,21 +67,12 @@ internal fun createTabWebView(
         var pendingSnapshotColorAfterScroll = false
         var pendingEdgeProbeAfterScroll = false
         var lastRequestedCollapsed: Boolean? = null
+        var lastDomSnapshotTimestampMs = 0L
 
         val isScrollBusy: () -> Boolean = { isTouchActive || isFlingScrolling }
         val canSafelyAccessWebView: () -> Boolean = {
             !isDestroyed && isAttachedToWindow && windowToken != null
         }
-
-        val bottomCoordinator = DocumentBottomScrollCoordinator(this, tabId, viewModel)
-        val edgeProbeScheduler = EdgeProbeScheduler(
-            webView = this,
-            tabId = tabId,
-            viewModel = viewModel,
-            bottomCoordinator = bottomCoordinator,
-            isActivelyScrolling = isScrollBusy,
-            canRunProbe = canSafelyAccessWebView
-        )
 
         val captureThumbnailRunnable = Runnable {
             if (!canSafelyAccessWebView()) return@Runnable
@@ -133,6 +125,38 @@ internal fun createTabWebView(
             }
         }
 
+        // Refresh snapshot when an in-page lightbox/modal opens or swaps images without changing URL
+        val domMutationSnapshotRunnable = Runnable {
+            if (!canSafelyAccessWebView() || isScrollBusy()) return@Runnable
+            val now = SystemClock.uptimeMillis()
+            if (now - lastDomSnapshotTimestampMs < 1100L) return@Runnable
+            lastDomSnapshotTimestampMs = now
+
+            val currentUrl = this@apply.url.orEmpty()
+            if (currentUrl.isNotBlank()) {
+                pageColorCache.remove(currentUrl)
+            }
+            scheduleSnapshotColorExtract(0L)
+        }
+
+        val onDomVisualMutation: () -> Unit = {
+            if (!isDestroyed && !isScrollBusy()) {
+                mainHandler.removeCallbacks(domMutationSnapshotRunnable)
+                mainHandler.postDelayed(domMutationSnapshotRunnable, 650L)
+            }
+        }
+
+        val bottomCoordinator = DocumentBottomScrollCoordinator(this, tabId, viewModel)
+        val edgeProbeScheduler = EdgeProbeScheduler(
+            webView = this,
+            tabId = tabId,
+            viewModel = viewModel,
+            bottomCoordinator = bottomCoordinator,
+            isActivelyScrolling = isScrollBusy,
+            canRunProbe = canSafelyAccessWebView,
+            onDomVisualMutation = onDomVisualMutation
+        )
+
         val scrollIdleRunnable = Runnable {
             isFlingScrolling = false
             if (isTouchActive || !canSafelyAccessWebView()) return@Runnable
@@ -159,6 +183,7 @@ internal fun createTabWebView(
         val cancelSnapshotsForScroll: () -> Unit = {
             mainHandler.removeCallbacks(captureThumbnailRunnable)
             mainHandler.removeCallbacks(extractSnapshotColorRunnable)
+            mainHandler.removeCallbacks(domMutationSnapshotRunnable)
             if (isColorExtractionInFlight) {
                 isColorExtractionInFlight = false
                 pendingSnapshotColorAfterScroll = true

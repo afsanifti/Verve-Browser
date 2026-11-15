@@ -51,21 +51,3 @@ fun ExpressiveTabButton(
         }
     }
 }
-
-private val TabSwitcherVectorIcon: ImageVector by lazy {
-    ImageVector.Builder(
-        name = "TabSwitcher",
-        defaultWidth = 24.dp,
-        defaultHeight = 24.dp,
-        viewportWidth = 24f,
-        viewportHeight = 24f
-    ).apply {
-        addPath(
-            pathData = PathParser().parsePathString(
-                "M4,8H2v12c0,1.1 0.9,2 2,2h12v-2H4V8z " +
-                        "M20,2H8C6.9,2 6,2.9 6,4v12c0,1.1 0.9,2 2,2h12c1.1,0 2,-0.9 2,-2V4C22,2.9 21.1,2 20,2z"
-            ).toNodes(),
-            fill = SolidColor(Color.Black)
-        )
-    }.build()
-}

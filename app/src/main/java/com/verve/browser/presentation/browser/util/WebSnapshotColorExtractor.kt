@@ -227,7 +227,8 @@ object WebSnapshotColorExtractor {
 
         var matchedPixelCount = 0
 
-        for (pixel in pixels) {
+        for (index in pixels.indices) {
+            val pixel = pixels[index]
             if (android.graphics.Color.alpha(pixel) < 128) continue
 
             val r = android.graphics.Color.red(pixel)
@@ -240,15 +241,20 @@ object WebSnapshotColorExtractor {
             val brightness = hsv[2]
 
             if (saturation < minSaturation) continue
-            if (brightness !in minBrightness..maxBrightness) continue
-            // Reject near-white highlights with negligible tint
+            if (brightness < minBrightness || brightness > maxBrightness) continue
             if (brightness > 0.94f && saturation < 0.08f) continue
 
             matchedPixelCount++
 
-            // Area-first weighting (75% area + 25% chroma tie-breaker) so small UI buttons
-            // cannot overpower large hero banners or dominant page imagery
-            val weight = 0.75f + 0.25f * saturation
+            // Favor the main hero / expanded media area (rows 12%..82%) over small fixed top-bar buttons
+            val rowRatio = (index / SAMPLE_SIZE).toFloat() / SAMPLE_SIZE.toFloat()
+            val regionWeight = when {
+                rowRatio < 0.12f -> 0.80f
+                rowRatio < 0.82f -> 1.20f
+                else -> 0.90f
+            }
+            val chromaWeight = 0.75f + 0.25f * saturation
+            val weight = regionWeight * chromaWeight
 
             val bin = (hue / 10f).toInt().coerceIn(0, HUE_BINS - 1)
             binWeights[bin] += weight
@@ -259,7 +265,6 @@ object WebSnapshotColorExtractor {
 
         if (matchedPixelCount < minPixelCount) return null
 
-        // Score across a 30-degree circular window so multi-shade purples/pinks/reds stay unified
         var bestBin = -1
         var bestSmoothedScore = 0f
         for (i in 0 until HUE_BINS) {
@@ -274,7 +279,6 @@ object WebSnapshotColorExtractor {
 
         if (bestBin == -1) return null
 
-        // Blend the winning bin with neighboring bins that belong to the same color family
         val prev = (bestBin + HUE_BINS - 1) % HUE_BINS
         val next = (bestBin + 1) % HUE_BINS
         val centerWeight = binWeights[bestBin]
@@ -325,7 +329,6 @@ object WebSnapshotColorExtractor {
                 }
                 if (hex.length == 6 || hex.length == 8) Color("#$hex".toColorInt()) else null
             }
-            // Ignore near-white or near-black CSS fallbacks so neutral pages keep the default theme
             parsed?.takeUnless { c ->
                 (c.red > 0.94f && c.green > 0.94f && c.blue > 0.94f) ||
                         (c.red < 0.06f && c.green < 0.06f && c.blue < 0.06f)
