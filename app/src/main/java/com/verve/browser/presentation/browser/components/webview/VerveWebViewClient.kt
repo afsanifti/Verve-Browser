@@ -1,29 +1,110 @@
 package com.verve.browser.presentation.browser.components.webview
 
+import android.annotation.SuppressLint
+import android.content.Context
+import android.content.Intent
 import android.graphics.Bitmap
+import android.net.Uri
+import android.net.http.SslError
+import android.text.TextUtils
+import android.webkit.RenderProcessGoneDetail
+import android.webkit.SslErrorHandler
+import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import com.verve.browser.presentation.browser.BrowserViewModel
+import com.verve.browser.presentation.browser.util.TabPageColorCache
+import com.verve.browser.presentation.browser.util.TabWebViewPool
 import com.verve.browser.presentation.browser.util.WebSnapshotColorExtractor
 import java.io.ByteArrayInputStream
 
 internal class VerveWebViewClient(
     private val tabId: String,
     private val viewModel: BrowserViewModel,
+    private val tabWebViewPool: TabWebViewPool,
+    private val pageColorCache: TabPageColorCache,
     private val edgeProbeScheduler: EdgeProbeScheduler,
     private val bottomCoordinator: DocumentBottomScrollCoordinator,
     private val scheduleThumbnailCapture: (Long) -> Unit,
-    private val onNavigatedUrl: (String) -> Unit
+    private val scheduleSnapshotColorExtract: (Long) -> Unit,
+    private val onNavigatedUrl: (String) -> Unit,
+    private val onWebViewDestroyed: () -> Unit
 ) : WebViewClient() {
 
     @Volatile
     private var currentPageUrl: String = ""
+    private var lastColorExtractedUrl: String = ""
+    private var isMainFrameLoading: Boolean = false
+    private val attemptedFallbackUrls = HashSet<String>()
+    private var pendingFallbackUrl: String? = null
+    private var isShowingErrorPage: Boolean = false
+    private var consecutiveRenderCrashes: Int = 0
+
+    override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
+        val uri = request?.url ?: return false
+        val scheme = uri.scheme?.lowercase().orEmpty()
+
+        if (scheme == "http" || scheme == "https" || scheme == "about" || scheme == "javascript") {
+            return false
+        }
+
+        val context = view?.context ?: return true
+        return handleExternalUri(context, uri, view)
+    }
+
+    private fun handleExternalUri(context: Context, uri: Uri, webView: WebView): Boolean {
+        val scheme = uri.scheme?.lowercase().orEmpty()
+        if (scheme == "intent") {
+            val parsedIntent = runCatching {
+                Intent.parseUri(uri.toString(), Intent.URI_INTENT_SCHEME)
+            }.getOrNull() ?: return true
+
+            parsedIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            val launched = runCatching {
+                context.startActivity(parsedIntent)
+                true
+            }.getOrDefault(false)
+
+            if (!launched) {
+                val fallbackUrl = parsedIntent.getStringExtra("browser_fallback_url")
+                if (!fallbackUrl.isNullOrBlank()) {
+                    webView.loadUrl(fallbackUrl)
+                }
+            }
+            return true
+        }
+
+        runCatching {
+            val intent = Intent(Intent.ACTION_VIEW, uri).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(intent)
+        }
+        return true
+    }
 
     override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
         super.onPageStarted(view, url, favicon)
-        if (!url.isNullOrBlank() && url != "about:blank") {
+        if (!url.isNullOrBlank() && url != "about:blank" && !url.startsWith("data:")) {
+            isMainFrameLoading = true
+            if (pendingFallbackUrl == null || url == pendingFallbackUrl) {
+                pendingFallbackUrl = null
+                isShowingErrorPage = false
+            }
+
+            val normalizedUrl = WebSnapshotColorExtractor.normalizeUrl(url)
+            val cached = pageColorCache.get(normalizedUrl)
+            if (cached != null) {
+                WebSnapshotColorExtractor.cancel(view)
+                lastColorExtractedUrl = normalizedUrl
+                viewModel.onSnapshotColorReady(tabId, cached.color)
+            } else if (WebSnapshotColorExtractor.normalizeUrl(currentPageUrl) != normalizedUrl) {
+                lastColorExtractedUrl = ""
+                WebSnapshotColorExtractor.cancel(view)
+            }
+
             currentPageUrl = url
             onNavigatedUrl(url)
             if (viewModel.uiState.value.activeTabId == tabId) {
@@ -35,23 +116,33 @@ internal class VerveWebViewClient(
 
     override fun onPageCommitVisible(view: WebView?, url: String?) {
         super.onPageCommitVisible(view, url)
-        if (!url.isNullOrBlank() && url != "about:blank") {
-            edgeProbeScheduler.scheduleDebounced(30L)
-            scheduleThumbnailCapture(120L)
-            WebSnapshotColorExtractor.extractFromWebView(view, delayMs = 80L) { extractedColor ->
-                viewModel.onSnapshotColorReady(tabId, extractedColor)
-            }
+        if (!url.isNullOrBlank() && url != "about:blank" && !isShowingErrorPage) {
+            consecutiveRenderCrashes = 0
+            attemptedFallbackUrls.clear()
+            edgeProbeScheduler.scheduleDebounced(40L)
+            scheduleThumbnailCapture(180L)
         }
     }
 
     override fun onPageFinished(view: WebView?, url: String?) {
         super.onPageFinished(view, url)
-        if (!url.isNullOrBlank() && url != "about:blank") {
-            edgeProbeScheduler.scheduleDebounced(140L)
+        isMainFrameLoading = false
+
+        if (!url.isNullOrBlank() && url != "about:blank" && !isShowingErrorPage) {
+            edgeProbeScheduler.scheduleDebounced(160L)
             edgeProbeScheduler.attachDomMutationObserver()
-            scheduleThumbnailCapture(280L)
-            WebSnapshotColorExtractor.extractFromWebView(view, delayMs = 350L) { extractedColor ->
-                viewModel.onSnapshotColorReady(tabId, extractedColor)
+            scheduleThumbnailCapture(320L)
+
+            val normalizedUrl = WebSnapshotColorExtractor.normalizeUrl(url)
+            val cached = pageColorCache.get(normalizedUrl)
+            if (cached != null) {
+                if (lastColorExtractedUrl != normalizedUrl) {
+                    lastColorExtractedUrl = normalizedUrl
+                    viewModel.onSnapshotColorReady(tabId, cached.color)
+                }
+            } else if (lastColorExtractedUrl != normalizedUrl) {
+                lastColorExtractedUrl = normalizedUrl
+                scheduleSnapshotColorExtract(180L)
             }
         }
 
@@ -66,15 +157,30 @@ internal class VerveWebViewClient(
 
     override fun doUpdateVisitedHistory(view: WebView?, url: String?, isReload: Boolean) {
         super.doUpdateVisitedHistory(view, url, isReload)
-        if (!url.isNullOrBlank() && url != "about:blank") {
+        if (!url.isNullOrBlank() && url != "about:blank" && !url.startsWith("data:")) {
+            val previousFullUrl = WebSnapshotColorExtractor.normalizeUrl(currentPageUrl)
+            val newFullUrl = WebSnapshotColorExtractor.normalizeUrl(url)
+            currentPageUrl = url
             onNavigatedUrl(url)
-            edgeProbeScheduler.scheduleDebounced(160L)
-            scheduleThumbnailCapture(240L)
-        }
-        if (!isReload) {
-            WebSnapshotColorExtractor.extractFromWebView(view, delayMs = 400L) { extractedColor ->
-                if (extractedColor != null) {
-                    viewModel.updateSiteSeedColor(tabId, extractedColor)
+
+            if (isReload) {
+                pageColorCache.remove(newFullUrl)
+                lastColorExtractedUrl = ""
+                if (!isShowingErrorPage && !isMainFrameLoading) {
+                    lastColorExtractedUrl = newFullUrl
+                    scheduleSnapshotColorExtract(180L)
+                }
+            } else if (!isShowingErrorPage && !isMainFrameLoading && previousFullUrl != newFullUrl) {
+                val cached = pageColorCache.get(newFullUrl)
+                if (cached != null) {
+                    WebSnapshotColorExtractor.cancel(view)
+                    lastColorExtractedUrl = newFullUrl
+                    viewModel.onSnapshotColorReady(tabId, cached.color)
+                } else if (lastColorExtractedUrl != newFullUrl) {
+                    lastColorExtractedUrl = newFullUrl
+                    edgeProbeScheduler.scheduleDebounced(200L)
+                    scheduleThumbnailCapture(320L)
+                    scheduleSnapshotColorExtract(240L)
                 }
             }
         }
@@ -86,6 +192,199 @@ internal class VerveWebViewClient(
             )
         }
     }
+
+    @SuppressLint("WebViewClientOnReceivedSslError")
+    override fun onReceivedSslError(view: WebView?, handler: SslErrorHandler?, error: SslError?) {
+        handler?.cancel()
+        val failedUrl = error?.url?.takeIf { it.isNotBlank() } ?: currentPageUrl
+        if (view != null && tryFallbackLoad(view, failedUrl, isDnsError = false)) {
+            return
+        }
+        if (pendingFallbackUrl != null) return
+
+        isMainFrameLoading = false
+        WebSnapshotColorExtractor.cancel(view)
+        viewModel.onRevealTimeout()
+        view?.let {
+            renderLoadErrorPage(
+                webView = it,
+                failedUrl = failedUrl,
+                title = "Connection is not secure",
+                description = "The security certificate for this website could not be verified."
+            )
+        }
+    }
+
+    override fun onReceivedError(
+        view: WebView?,
+        request: WebResourceRequest?,
+        error: WebResourceError?
+    ) {
+        super.onReceivedError(view, request, error)
+        if (request?.isForMainFrame != true) return
+
+        val failedUrl = request.url?.toString().orEmpty()
+        // Ignore secondary error callbacks for a request that already triggered a fallback load
+        if (pendingFallbackUrl != null && failedUrl != pendingFallbackUrl) {
+            return
+        }
+
+        val errorCode = error?.errorCode ?: ERROR_UNKNOWN
+        if (errorCode == ERROR_UNSUPPORTED_SCHEME) return
+
+        val isDnsError = errorCode == ERROR_HOST_LOOKUP
+        if (view != null && shouldAttemptFallback(errorCode) && tryFallbackLoad(view, failedUrl, isDnsError)) {
+            return
+        }
+
+        pendingFallbackUrl = null
+        isMainFrameLoading = false
+        WebSnapshotColorExtractor.cancel(view)
+        viewModel.onRevealTimeout()
+        view?.let {
+            val reason = error?.description?.toString().orEmpty().ifBlank { "ERR_CONNECTION_FAILED" }
+            renderLoadErrorPage(
+                webView = it,
+                failedUrl = failedUrl,
+                title = "This site can’t be reached",
+                description = "Could not load $failedUrl ($reason)."
+            )
+        }
+    }
+
+    override fun onRenderProcessGone(view: WebView?, detail: RenderProcessGoneDetail?): Boolean {
+        isMainFrameLoading = false
+        WebSnapshotColorExtractor.cancel(view)
+        onWebViewDestroyed()
+        val deadView = view ?: return true
+
+        val crashed = detail?.didCrash() == true
+        consecutiveRenderCrashes = if (crashed) consecutiveRenderCrashes + 1 else 0
+        val shouldReload = consecutiveRenderCrashes < 2
+
+        tabWebViewPool.handleRenderProcessGone(
+            tabId = tabId,
+            deadWebView = deadView,
+            shouldReload = shouldReload
+        )
+
+        if (!shouldReload) {
+            viewModel.onRevealTimeout()
+        }
+        return true
+    }
+
+    private fun shouldAttemptFallback(errorCode: Int): Boolean {
+        return errorCode == ERROR_FAILED_SSL_HANDSHAKE ||
+                errorCode == ERROR_CONNECT ||
+                errorCode == ERROR_TIMEOUT ||
+                errorCode == ERROR_IO ||
+                errorCode == ERROR_HOST_LOOKUP ||
+                errorCode == ERROR_UNKNOWN
+    }
+
+    private fun tryFallbackLoad(
+        webView: WebView,
+        failedUrl: String,
+        isDnsError: Boolean
+    ): Boolean {
+        if (failedUrl.isBlank()) return false
+        val parsed = runCatching { Uri.parse(failedUrl) }.getOrNull() ?: return false
+        val scheme = parsed.scheme?.lowercase().orEmpty()
+        val host = parsed.host?.lowercase().orEmpty()
+        if (host.isEmpty()) return false
+
+        val candidateUrl: String? = when {
+            isDnsError && !host.startsWith("www.") -> {
+                parsed.buildUpon().authority("www.$host").build().toString()
+            }
+            scheme == "https" -> {
+                parsed.buildUpon().scheme("http").build().toString()
+            }
+            !host.startsWith("www.") -> {
+                parsed.buildUpon().scheme("http").authority("www.$host").build().toString()
+            }
+            else -> null
+        }
+
+        if (candidateUrl.isNullOrBlank() ||
+            candidateUrl == failedUrl ||
+            !attemptedFallbackUrls.add(candidateUrl)
+        ) {
+            return false
+        }
+
+        pendingFallbackUrl = candidateUrl
+        currentPageUrl = candidateUrl
+        onNavigatedUrl(candidateUrl)
+        webView.post {
+            webView.loadUrl(candidateUrl)
+        }
+        return true
+    }
+
+    private fun renderLoadErrorPage(
+        webView: WebView,
+        failedUrl: String,
+        title: String,
+        description: String
+    ) {
+        isShowingErrorPage = true
+        lastColorExtractedUrl = ""
+        attemptedFallbackUrls.clear()
+        val escapedUrl = escapeHtml(failedUrl)
+        val escapedTitle = escapeHtml(title)
+        val escapedDesc = escapeHtml(description)
+        val html = """
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                <style>
+                    :root { color-scheme: light dark; }
+                    body {
+                        font-family: system-ui, -apple-system, sans-serif;
+                        margin: 0;
+                        padding: 32px 24px;
+                        display: flex;
+                        flex-direction: column;
+                        justify-content: center;
+                        min-height: 75vh;
+                        background: Canvas;
+                        color: CanvasText;
+                    }
+                    h2 { font-size: 20px; margin: 0 0 10px; font-weight: 600; }
+                    p { font-size: 14px; line-height: 1.5; opacity: 0.78; margin: 0 0 24px; word-break: break-word; }
+                    button {
+                        align-self: flex-start;
+                        padding: 10px 22px;
+                        border-radius: 999px;
+                        border: none;
+                        font-size: 14px;
+                        font-weight: 600;
+                        background: #3B5BA9;
+                        color: #FFFFFF;
+                    }
+                </style>
+            </head>
+            <body>
+                <h2>$escapedTitle</h2>
+                <p>$escapedDesc</p>
+                <button onclick="location.href='$escapedUrl'">Try again</button>
+            </body>
+            </html>
+        """.trimIndent()
+
+        webView.loadDataWithBaseURL(
+            failedUrl.ifBlank { "about:blank" },
+            html,
+            "text/html",
+            "UTF-8",
+            failedUrl.ifBlank { null }
+        )
+    }
+
+    private fun escapeHtml(raw: String): String = TextUtils.htmlEncode(raw)
 
     override fun shouldInterceptRequest(
         view: WebView?,
@@ -99,7 +398,6 @@ internal class VerveWebViewClient(
         }
 
         val pageUrl = if (webResourceRequest.isForMainFrame) {
-            currentPageUrl = reqUrl
             reqUrl
         } else {
             webResourceRequest.requestHeaders?.get("Referer") ?: currentPageUrl
@@ -109,13 +407,42 @@ internal class VerveWebViewClient(
         val isBlocked = viewModel.checkResourceBlocking(reqUrl, pageUrl, resourceType)
 
         if (isBlocked) {
+            if (webResourceRequest.isForMainFrame) {
+                viewModel.onRevealTimeout()
+                val blockedHtml = """
+                    <!DOCTYPE html>
+                    <html>
+                    <head><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
+                    <body style="font-family:system-ui;padding:32px 24px;background:Canvas;color:CanvasText;">
+                        <h3>Page blocked by Verve Shield</h3>
+                        <p style="opacity:0.75;word-break:break-all;">${escapeHtml(reqUrl)}</p>
+                    </body>
+                    </html>
+                """.trimIndent()
+                return WebResourceResponse(
+                    "text/html",
+                    "UTF-8",
+                    200,
+                    "OK",
+                    null,
+                    ByteArrayInputStream(blockedHtml.toByteArray(Charsets.UTF_8))
+                )
+            }
+
+            val (mimeType, bodyBytes) = when (resourceType) {
+                "script" -> "application/javascript" to ByteArray(0)
+                "stylesheet" -> "text/css" to ByteArray(0)
+                "xmlhttprequest" -> "application/json" to "{}".toByteArray(Charsets.UTF_8)
+                else -> "text/plain" to ByteArray(0)
+            }
+
             return WebResourceResponse(
-                "text/plain",
+                mimeType,
                 "UTF-8",
                 200,
                 "OK",
-                null,
-                ByteArrayInputStream(ByteArray(0))
+                mapOf("Access-Control-Allow-Origin" to "*"),
+                ByteArrayInputStream(bodyBytes)
             )
         }
 

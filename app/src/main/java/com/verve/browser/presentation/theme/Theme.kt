@@ -1,6 +1,5 @@
 package com.verve.browser.presentation.theme
 
-import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.MaterialTheme
@@ -11,6 +10,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import com.materialkolor.PaletteStyle
 import com.materialkolor.material3.DynamicMaterialExpressiveTheme
+import com.verve.browser.presentation.theme.AppTypography
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
@@ -41,9 +41,10 @@ private fun WebsiteSnapshotThemeEngine(
     content: @Composable () -> Unit
 ) {
     DynamicMaterialExpressiveTheme(
+        typography = AppTypography,
         seedColor = seedColor,
         isDark = isDark,
-        style = PaletteStyle.TonalSpot,
+        style = PaletteStyle.Vibrant,
         content = content
     )
 }
@@ -63,7 +64,7 @@ private fun WallpaperThemeEngine(
 
     MaterialTheme(
         colorScheme = systemColorScheme,
-        typography = Typography,
+        typography = AppTypography,
         content = content
     )
 }

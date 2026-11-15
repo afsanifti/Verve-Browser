@@ -75,7 +75,7 @@ fun VerveWebView(
             }
 
             val lastRequestedUrl = tabWebViewPool.getLastRequestedUrl(tabId)
-            if (url.isNotEmpty() && url != lastRequestedUrl) {
+            if (url.isNotEmpty() && (url != lastRequestedUrl || targetWebView.copyBackForwardList().size == 0)) {
                 tabWebViewPool.setLastRequestedUrl(tabId, url)
                 targetWebView.loadUrl(url)
             }

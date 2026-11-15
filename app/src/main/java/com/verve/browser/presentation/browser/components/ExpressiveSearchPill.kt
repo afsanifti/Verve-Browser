@@ -42,6 +42,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.PathParser
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -50,6 +51,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.lerp
 import androidx.compose.ui.unit.sp
+import com.verve.browser.R
 import com.verve.browser.presentation.browser.util.DropShadow
 
 @Composable
@@ -130,10 +132,10 @@ fun ExpressiveSearchPill(
                         }
                 ) {
                     Icon(
-                        imageVector = TuneVectorIcon,
+                        painter = painterResource(id = R.drawable.ic_siteinfo),
                         contentDescription = "Site Settings",
                         tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                        modifier = Modifier.size(22.dp)
+                        modifier = Modifier.size(18.dp)
                     )
                 }
 
@@ -156,10 +158,10 @@ fun ExpressiveSearchPill(
                 ) {
                     Text(
                         text = extractDisplayDomain(currentUrl),
-                        style = TextStyle(
+                        style = MaterialTheme.typography.titleMedium.copy(
                             color = MaterialTheme.colorScheme.onPrimaryContainer,
-                            fontSize = domainFontSize,
-                            fontWeight = if (clampedExpand < 0.5f) FontWeight.SemiBold else FontWeight.Medium,
+                            fontSize = lerp(12.sp, 16.sp, clampedExpand),
+                            fontWeight = FontWeight.Medium,
                             textAlign = TextAlign.Center
                         ),
                         maxLines = 1,
@@ -196,10 +198,10 @@ fun ExpressiveSearchPill(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Icon(
-                    imageVector = Icons.Default.Search,
+                    painter = painterResource(id = R.drawable.ic_search),
                     contentDescription = "Search",
                     tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                    modifier = Modifier.size(24.dp)
+                    modifier = Modifier.size(18.dp)
                 )
 
                 Spacer(modifier = Modifier.width(12.dp))
@@ -219,10 +221,8 @@ fun ExpressiveSearchPill(
                             }
                         },
                     singleLine = true,
-                    textStyle = TextStyle(
-                        color = MaterialTheme.colorScheme.onPrimaryContainer,
-                        fontSize = 17.sp,
-                        fontWeight = FontWeight.Medium
+                    textStyle = MaterialTheme.typography.titleMedium.copy(
+                        color = MaterialTheme.colorScheme.onPrimaryContainer
                     ),
                     cursorBrush = SolidColor(MaterialTheme.colorScheme.onPrimaryContainer),
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
@@ -236,10 +236,8 @@ fun ExpressiveSearchPill(
                             if (inputText.isEmpty()) {
                                 Text(
                                     text = "Search....",
-                                    style = TextStyle(
-                                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.6f),
-                                        fontSize = 17.sp,
-                                        fontWeight = FontWeight.Medium
+                                    style = MaterialTheme.typography.titleMedium.copy(
+                                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.6f)
                                     )
                                 )
                             }
@@ -261,23 +259,4 @@ internal fun extractDisplayDomain(url: String): String {
             url
         }
     }.getOrDefault(url)
-}
-
-private val TuneVectorIcon: ImageVector by lazy {
-    ImageVector.Builder(
-        name = "Tune",
-        defaultWidth = 24.dp,
-        defaultHeight = 24.dp,
-        viewportWidth = 24f,
-        viewportHeight = 24f
-    ).apply {
-        addPath(
-            pathData = PathParser().parsePathString(
-                "M3,17v2h6v-2L3,17z M3,5v2h10L13,5L3,5z M13,21v-2h8v-2h-8v-2h-2v6h2z " +
-                        "M7,9v2L3,11v2h4v2h2L9,9L7,9z M21,13v-2L11,11v2h10z " +
-                        "M15,9h2L17,7h4L21,5h-4L17,3h-2v6z"
-            ).toNodes(),
-            fill = SolidColor(Color.Black)
-        )
-    }.build()
 }

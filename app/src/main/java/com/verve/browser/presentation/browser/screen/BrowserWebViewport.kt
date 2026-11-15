@@ -4,13 +4,12 @@ import android.webkit.WebView
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.union
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.dp
 import com.verve.browser.presentation.browser.BrowserUiState
 import com.verve.browser.presentation.browser.BrowserViewModel
 import com.verve.browser.presentation.browser.components.PageRevealCurtain
@@ -34,8 +33,8 @@ internal fun BrowserWebViewport(
         modifier = modifier
             .fillMaxSize()
             .padding(
-                top = insetsState.topSafeAreaHeightDp,
-                bottom = curtainMetrics.fixedBottomPaddingDp
+                top = insetsState.topSafeAreaHeightDp.coerceAtLeast(0.dp),
+                bottom = curtainMetrics.fixedBottomPaddingDp.coerceAtLeast(0.dp)
             )
             .graphicsLayer { clip = true }
             .consumeWindowInsets(insetsState.topSafeAreaInsets.union(insetsState.bottomNavInsets))
@@ -50,7 +49,9 @@ internal fun BrowserWebViewport(
                 onWebViewCreated = onWebViewCreated,
                 modifier = Modifier
                     .fillMaxSize()
-                    .offset { IntOffset(0, -curtainMetrics.scrollBottomShiftPx) }
+                    .graphicsLayer {
+                        translationY = -curtainMetrics.scrollBottomShiftPx.toFloat()
+                    }
             )
 
             PageRevealCurtain(

@@ -14,19 +14,29 @@ internal class EdgeProbeScheduler(
     private val webView: WebView,
     private val tabId: String,
     private val viewModel: BrowserViewModel,
-    private val bottomCoordinator: DocumentBottomScrollCoordinator
+    private val bottomCoordinator: DocumentBottomScrollCoordinator,
+    private val isActivelyScrolling: () -> Boolean = { false },
+    private val canRunProbe: () -> Boolean = { webView.isAttachedToWindow && webView.windowToken != null }
 ) {
     private val handler = Handler(Looper.getMainLooper())
     private var lastProbeTimestampMs = 0L
     private var activePort: WebMessagePort? = null
+    private var isDisposed = false
 
-    private val probeRunnable = Runnable {
+    private val probeRunnable: Runnable = Runnable {
+        if (isDisposed || !canRunProbe()) return@Runnable
+        if (isActivelyScrolling()) {
+            handler.postDelayed(probeRunnable, 90L)
+            return@Runnable
+        }
+
         lastProbeTimestampMs = SystemClock.uptimeMillis()
         val approachingBottom = bottomCoordinator.isInBottomLookaheadZone()
         WebEdgeColorExtractor.extractEdgeProbe(
             webView = webView,
             isApproachingBottom = approachingBottom
         ) { probeResult ->
+            if (isDisposed || !canRunProbe()) return@extractEdgeProbe
             viewModel.updateTopRegionColor(tabId, probeResult.topColor)
             viewModel.updateBottomRegionColor(tabId, probeResult.bottomColor)
             if (viewModel.uiState.value.activeTabId == tabId) {
@@ -37,17 +47,19 @@ internal class EdgeProbeScheduler(
     }
 
     fun scheduleDebounced(delayMs: Long) {
+        if (isDisposed) return
         handler.removeCallbacks(probeRunnable)
         handler.postDelayed(probeRunnable, delayMs)
     }
 
     fun onScroll() {
+        if (isDisposed) return
         val now = SystemClock.uptimeMillis()
         val approachingBottom = bottomCoordinator.isInBottomLookaheadZone()
         val throttleMs = if (approachingBottom) 60L else 140L
         val settleDelayMs = if (approachingBottom) 70L else 120L
 
-        if (now - lastProbeTimestampMs >= throttleMs) {
+        if (!isActivelyScrolling() && now - lastProbeTimestampMs >= throttleMs) {
             handler.removeCallbacks(probeRunnable)
             probeRunnable.run()
         }
@@ -55,8 +67,19 @@ internal class EdgeProbeScheduler(
         handler.postDelayed(probeRunnable, settleDelayMs)
     }
 
+    fun cancelPending() {
+        handler.removeCallbacks(probeRunnable)
+    }
+
+    fun dispose() {
+        isDisposed = true
+        handler.removeCallbacksAndMessages(null)
+        runCatching { activePort?.close() }
+        activePort = null
+    }
+
     fun attachDomMutationObserver() {
-        if (!webView.isAttachedToWindow) return
+        if (isDisposed || !canRunProbe()) return
         runCatching {
             activePort?.close()
             val channel = webView.createWebMessageChannel()
@@ -66,7 +89,9 @@ internal class EdgeProbeScheduler(
 
             nativePort.setWebMessageCallback(object : WebMessagePort.WebMessageCallback() {
                 override fun onMessage(port: WebMessagePort?, message: WebMessage?) {
-                    scheduleDebounced(150L)
+                    if (!isDisposed) {
+                        scheduleDebounced(150L)
+                    }
                 }
             }, handler)
 
@@ -104,7 +129,7 @@ internal class EdgeProbeScheduler(
             """.trimIndent()
 
             webView.evaluateJavascript(initObserverJs) {
-                if (webView.isAttachedToWindow) {
+                if (!isDisposed && canRunProbe()) {
                     runCatching {
                         webView.postWebMessage(
                             WebMessage("__verve_edge_init__", arrayOf(jsPort)),
