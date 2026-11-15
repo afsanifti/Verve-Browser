@@ -14,7 +14,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.PathParser
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
+import com.verve.browser.R
 import com.verve.browser.presentation.browser.util.DropShadow
 
 @Composable
@@ -41,10 +43,10 @@ fun ExpressiveTabButton(
             modifier = Modifier.fillMaxSize()
         ) {
             Icon(
-                imageVector = TabSwitcherVectorIcon,
+                painter = painterResource(id = R.drawable.ic_tabstack),
                 contentDescription = "Tabs",
                 tint = MaterialTheme.colorScheme.onSecondaryContainer,
-                modifier = Modifier.size(22.dp)
+                modifier = Modifier.size(18.dp)
             )
         }
     }

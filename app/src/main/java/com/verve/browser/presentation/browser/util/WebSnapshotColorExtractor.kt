@@ -56,11 +56,11 @@ class TabPageColorCache(private val maxEntries: Int = 10) {
 
 object WebSnapshotColorExtractor {
 
-    private const val SAMPLE_SIZE = 128
+    private const val SAMPLE_SIZE = 160
     private const val HUE_BINS = 36
-    private const val VIEWPORT_SAMPLE_RATIO = 0.42f
-    private const val MIN_PRIMARY_PIXELS = 96
-    private const val MIN_SURFACE_PIXELS = 600
+    private const val VIEWPORT_SAMPLE_RATIO = 0.88f
+    private const val MIN_PRIMARY_PIXELS = 120
+    private const val MIN_SURFACE_PIXELS = 900
 
     private val mainHandler = Handler(Looper.getMainLooper())
     private val extractionScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -192,10 +192,10 @@ object WebSnapshotColorExtractor {
         val pixels = IntArray(SAMPLE_SIZE * SAMPLE_SIZE)
         bitmap.getPixels(pixels, 0, SAMPLE_SIZE, 0, 0, SAMPLE_SIZE, SAMPLE_SIZE)
 
-        // Pass 1: Brand / accent colors (buttons, banners, badges, logos)
+        // Pass 1: Brand / accent colors & dominant visual media across the visible viewport
         val primaryColor = quantizeHueBins(
             pixels = pixels,
-            minSaturation = 0.18f,
+            minSaturation = 0.16f,
             minBrightness = 0.12f,
             maxBrightness = 0.96f,
             minPixelCount = MIN_PRIMARY_PIXELS
@@ -227,8 +227,7 @@ object WebSnapshotColorExtractor {
 
         var matchedPixelCount = 0
 
-        for (index in pixels.indices) {
-            val pixel = pixels[index]
+        for (pixel in pixels) {
             if (android.graphics.Color.alpha(pixel) < 128) continue
 
             val r = android.graphics.Color.red(pixel)
@@ -241,18 +240,15 @@ object WebSnapshotColorExtractor {
             val brightness = hsv[2]
 
             if (saturation < minSaturation) continue
-            if (brightness < minBrightness || brightness > maxBrightness) continue
+            if (brightness !in minBrightness..maxBrightness) continue
             // Reject near-white highlights with negligible tint
             if (brightness > 0.94f && saturation < 0.08f) continue
 
             matchedPixelCount++
 
-            // Bias toward the top of the viewport (header & hero) over lower content
-            val row = index / SAMPLE_SIZE
-            val spatialWeight = 1.25f - 0.50f * (row.toFloat() / SAMPLE_SIZE.toFloat())
-            // Balance area proportion (30%) and chroma (70%) so tiny specks can't dominate
-            val chromaWeight = 0.30f + 0.70f * saturation
-            val weight = spatialWeight * chromaWeight
+            // Area-first weighting (75% area + 25% chroma tie-breaker) so small UI buttons
+            // cannot overpower large hero banners or dominant page imagery
+            val weight = 0.75f + 0.25f * saturation
 
             val bin = (hue / 10f).toInt().coerceIn(0, HUE_BINS - 1)
             binWeights[bin] += weight
@@ -263,13 +259,13 @@ object WebSnapshotColorExtractor {
 
         if (matchedPixelCount < minPixelCount) return null
 
-        // Score using a circular 3-bin window so multi-shade purples/pinks/reds don't split votes
+        // Score across a 30-degree circular window so multi-shade purples/pinks/reds stay unified
         var bestBin = -1
         var bestSmoothedScore = 0f
         for (i in 0 until HUE_BINS) {
             val prev = (i + HUE_BINS - 1) % HUE_BINS
             val next = (i + 1) % HUE_BINS
-            val smoothedScore = 0.45f * binWeights[prev] + binWeights[i] + 0.45f * binWeights[next]
+            val smoothedScore = 0.65f * binWeights[prev] + binWeights[i] + 0.65f * binWeights[next]
             if (smoothedScore > bestSmoothedScore) {
                 bestSmoothedScore = smoothedScore
                 bestBin = i
@@ -278,12 +274,12 @@ object WebSnapshotColorExtractor {
 
         if (bestBin == -1) return null
 
-        // Blend the winning bin with its immediate neighbors (only if they carry meaningful weight)
+        // Blend the winning bin with neighboring bins that belong to the same color family
         val prev = (bestBin + HUE_BINS - 1) % HUE_BINS
         val next = (bestBin + 1) % HUE_BINS
         val centerWeight = binWeights[bestBin]
-        val prevWeight = if (binWeights[prev] > centerWeight * 0.20f) binWeights[prev] * 0.5f else 0f
-        val nextWeight = if (binWeights[next] > centerWeight * 0.20f) binWeights[next] * 0.5f else 0f
+        val prevWeight = if (binWeights[prev] >= centerWeight * 0.25f) binWeights[prev] else 0f
+        val nextWeight = if (binWeights[next] >= centerWeight * 0.25f) binWeights[next] else 0f
 
         val totalWeight = centerWeight + prevWeight + nextWeight
         if (totalWeight <= 0f) return null

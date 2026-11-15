@@ -94,14 +94,3 @@ internal class DocumentBottomScrollCoordinator(
         viewModel.updateBottomCurtainProgress(normalized)
     }
 }
-
-// where to put these??
-//private var accumulatedDelta = 0
-//private val collapseSlopPx = ViewConfiguration.get(context).scaledTouchSlop
-//
-//// Only update toolbar state once accumulated drag passes touchSlop
-//if ((dy > 0 && accumulatedDelta < 0) || (dy < 0 && accumulatedDelta > 0)) {
-//    accumulatedDelta = 0
-//}
-//accumulatedDelta += dy
-//if (kotlin.math.abs(accumulatedDelta) < collapseSlopPx) return

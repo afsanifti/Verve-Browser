@@ -42,7 +42,7 @@ fun ExpressiveLeftActionButton(
                 imageVector = Icons.Rounded.KeyboardArrowUp,
                 contentDescription = "Page Menu",
                 tint = MaterialTheme.colorScheme.onSecondaryContainer,
-                modifier = Modifier.size(24.dp)
+                modifier = Modifier.size(28.dp)
             )
         }
     }
