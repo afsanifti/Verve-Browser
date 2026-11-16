@@ -170,4 +170,16 @@ class AppUpdateController(
         private const val KEY_LAST_CHECK_MS = "last_check_ms"
         private const val KEY_SNOOZED_VERSION_CODE = "snoozed_version_code"
     }
+
+    fun cancelDownload() {
+        downloadJob?.cancel()
+        downloadJob = null
+        _uiState.update {
+            it.copy(
+                isDownloading = false,
+                downloadProgress = 0f
+            )
+        }
+    }
 }
+

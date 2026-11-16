@@ -28,6 +28,8 @@ import com.verve.browser.presentation.browser.screen.rememberBrowserCurtainMetri
 import com.verve.browser.presentation.browser.screen.rememberBrowserInsetsState
 import com.verve.browser.presentation.browser.util.TabThumbnailCache
 import com.verve.browser.presentation.browser.util.TabWebViewPool
+import com.verve.browser.presentation.settings.SettingsFlow
+import com.verve.browser.presentation.theme.VerveBrowserTheme
 import com.verve.browser.presentation.update.AppUpdateController
 import com.verve.browser.presentation.update.AppUpdateSheet
 import kotlinx.coroutines.delay
@@ -40,6 +42,7 @@ fun BrowserScreen(
 ) {
     val uiState: BrowserUiState by viewModel.uiState.collectAsState()
     var webViewRef by remember { mutableStateOf<WebView?>(null) }
+    var isSettingsOpen by remember { mutableStateOf(false) }
     val tabWebViewPool = remember { TabWebViewPool() }
     val thumbnailCache = remember { TabThumbnailCache() }
 
@@ -59,11 +62,13 @@ fun BrowserScreen(
         updateController.checkForUpdatesIfDue()
     }
 
-    AppUpdateSheet(
-        state = updateState,
-        onUpdateClick = updateController::startDownloadAndInstall,
-        onDismiss = { updateController.dismissSheet(snoozeVersion = true) }
-    )
+    if (!isSettingsOpen) {
+        AppUpdateSheet(
+            state = updateState,
+            onUpdateClick = updateController::startDownloadAndInstall,
+            onDismiss = { updateController.dismissSheet(snoozeVersion = true) }
+        )
+    }
 
     val isOnWebPage = uiState.currentUrl.isNotEmpty()
     val defaultRegionColor = MaterialTheme.colorScheme.surfaceContainerLow
@@ -89,7 +94,7 @@ fun BrowserScreen(
     }
 
     BrowserSystemBarSync(
-        isTabSwitcherOpen = uiState.isTabSwitcherOpen,
+        isTabSwitcherOpen = uiState.isTabSwitcherOpen || isSettingsOpen,
         targetTopColor = curtainMetrics.targetTopColor,
         targetBottomColor = curtainMetrics.targetBottomColor
     )
@@ -176,8 +181,19 @@ fun BrowserScreen(
                 onAddTabToStack = viewModel::addTabToStack,
                 onRemoveTabFromStack = viewModel::removeTabFromStack,
                 onToggleStackCollapsed = viewModel::toggleStackCollapsed,
+                onSettingsClick = { isSettingsOpen = true },
                 modifier = Modifier.fillMaxSize()
             )
+        }
+
+        // LAYER 5: Settings & About Verve
+        if (isSettingsOpen) {
+            VerveBrowserTheme(siteSeedColor = null) {
+                SettingsFlow(
+                    updateController = updateController,
+                    onExitSettings = { isSettingsOpen = false }
+                )
+            }
         }
     }
 }
