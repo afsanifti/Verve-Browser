@@ -39,7 +39,7 @@ fun VerveBrowserTheme(
 
     val resolvedStyle = when {
         isIncognito -> PaletteStyle.Monochrome
-        siteSeedColor != null -> PaletteStyle.Vibrant
+        siteSeedColor != null -> PaletteStyle.TonalSpot
         else -> PaletteStyle.TonalSpot
     }
 

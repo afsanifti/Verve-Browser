@@ -3,6 +3,12 @@ plugins {
     alias(libs.plugins.kotlin.compose)
 }
 
+val ciVersionCode = providers.gradleProperty("versionCode").orNull?.toIntOrNull() ?: 1
+val ciVersionName = providers.gradleProperty("versionName").orNull ?: "1.0"
+val ciGithubRepository = providers.gradleProperty("githubRepository").orNull
+    ?: System.getenv("GITHUB_REPOSITORY")
+    ?: "OWNER/REPO"
+
 android {
     namespace = "com.verve.browser"
     compileSdk {
@@ -15,17 +21,19 @@ android {
         applicationId = "com.verve.browser"
         minSdk = 31
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = ciVersionCode
+        versionName = ciVersionName
+
+        buildConfigField("String", "GITHUB_REPOSITORY", "\"$ciGithubRepository\"")
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     signingConfigs {
-        create("release") {
-            val path = System.getenv("KEYSTORE_PATH")
-            if (path != null) {
-                storeFile = file(path)
+        val keystorePath = System.getenv("KEYSTORE_FILE")
+        if (!keystorePath.isNullOrBlank() && file(keystorePath).exists()) {
+            create("release") {
+                storeFile = file(keystorePath)
                 storePassword = System.getenv("KEYSTORE_PASSWORD")
                 keyAlias = System.getenv("KEY_ALIAS")
                 keyPassword = System.getenv("KEY_PASSWORD")
@@ -35,16 +43,9 @@ android {
 
     buildTypes {
         release {
+            signingConfig = signingConfigs.findByName("release")
             optimization {
                 enable = false
-                // AGP's default rules plus your own
-//                proguardFiles(
-//                    getDefaultProguardFile("proguard-android-optimize.txt"),
-//                    "proguard-rules.pro"
-//                )
-            }
-            if (System.getenv("KEYSTORE_PATH") != null) {
-                signingConfig = signingConfigs.getByName("release")
             }
         }
     }
@@ -53,8 +54,10 @@ android {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
     }
+
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 }
 
@@ -71,7 +74,6 @@ dependencies {
     implementation(libs.materialKolor.material3)
     implementation(libs.compose.material3)
     implementation("androidx.compose.material:material-icons-extended:1.7.8")
-
 
     testImplementation("io.mockk:mockk:1.13.12")
     testImplementation("com.google.truth:truth:1.4.2")

@@ -12,9 +12,11 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import com.verve.browser.presentation.browser.components.QuickTabsScreen
 import com.verve.browser.presentation.browser.screen.BrowserBackHandler
 import com.verve.browser.presentation.browser.screen.BrowserBottomProgressiveCurtain
@@ -26,6 +28,8 @@ import com.verve.browser.presentation.browser.screen.rememberBrowserCurtainMetri
 import com.verve.browser.presentation.browser.screen.rememberBrowserInsetsState
 import com.verve.browser.presentation.browser.util.TabThumbnailCache
 import com.verve.browser.presentation.browser.util.TabWebViewPool
+import com.verve.browser.presentation.update.AppUpdateController
+import com.verve.browser.presentation.update.AppUpdateSheet
 import kotlinx.coroutines.delay
 import kotlin.time.Duration.Companion.milliseconds
 
@@ -45,6 +49,21 @@ fun BrowserScreen(
             thumbnailCache.clear()
         }
     }
+
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val updateController = remember { AppUpdateController(context, scope) }
+    val updateState by updateController.uiState.collectAsState()
+
+    LaunchedEffect(Unit) {
+        updateController.checkForUpdatesIfDue()
+    }
+
+    AppUpdateSheet(
+        state = updateState,
+        onUpdateClick = updateController::startDownloadAndInstall,
+        onDismiss = { updateController.dismissSheet(snoozeVersion = true) }
+    )
 
     val isOnWebPage = uiState.currentUrl.isNotEmpty()
     val defaultRegionColor = MaterialTheme.colorScheme.surfaceContainerLow
