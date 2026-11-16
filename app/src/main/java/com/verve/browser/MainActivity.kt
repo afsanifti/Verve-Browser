@@ -31,7 +31,10 @@ class MainActivity : ComponentActivity() {
         val viewModelFactory = object : ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST")
             override fun <T : ViewModel> create(modelClass: Class<T>): T {
-                return BrowserViewModel(app.shouldBlockUrlUseCase) as T
+                return BrowserViewModel(
+                    shouldBlockUrlUseCase = app.shouldBlockUrlUseCase,
+                    tabSessionStorage = app.tabSessionStorage
+                ) as T
             }
         }
 

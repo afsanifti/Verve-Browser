@@ -7,6 +7,7 @@ data class BrowserTab(
     val url: String = "",
     val title: String = "",
     val isIncognito: Boolean = false,
+    val stackId: String? = null,
     val siteSeedColor: Color? = null,
     val topRegionColor: Color? = null,
     val bottomRegionColor: Color? = null,
@@ -16,4 +17,12 @@ data class BrowserTab(
     val canGoBack: Boolean = false,
     val canGoForward: Boolean = false,
     val lastAccessedAt: Long = System.currentTimeMillis()
+)
+
+data class TabStack(
+    val id: String,
+    val title: String,
+    val seedColor: Color? = null,
+    val isCollapsed: Boolean = false,
+    val createdAt: Long = System.currentTimeMillis()
 )

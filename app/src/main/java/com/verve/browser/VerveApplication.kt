@@ -2,6 +2,7 @@ package com.verve.browser
 
 import android.app.Application
 import com.verve.browser.core.adblock.NativeAdBlocker
+import com.verve.browser.data.local.TabSessionStorage
 import com.verve.browser.data.repository.AdBlockRepositoryImpl
 import com.verve.browser.domain.repository.AdBlockRepository
 import com.verve.browser.domain.usecase.ShouldBlockUrlUseCase
@@ -14,8 +15,13 @@ class VerveApplication : Application() {
     lateinit var shouldBlockUrlUseCase: ShouldBlockUrlUseCase
         private set
 
+    lateinit var tabSessionStorage: TabSessionStorage
+        private set
+
     override fun onCreate() {
         super.onCreate()
+
+        tabSessionStorage = TabSessionStorage(this)
 
         val nativeBlocker = NativeAdBlocker()
         adBlockRepository = AdBlockRepositoryImpl(nativeBlocker)

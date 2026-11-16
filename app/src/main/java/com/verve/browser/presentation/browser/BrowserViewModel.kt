@@ -3,6 +3,8 @@ package com.verve.browser.presentation.browser
 import androidx.compose.ui.graphics.Color
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.verve.browser.data.local.PersistedSessionSnapshot
+import com.verve.browser.data.local.TabSessionStorage
 import com.verve.browser.domain.model.UrlCheckResult
 import com.verve.browser.domain.usecase.ShouldBlockUrlUseCase
 import com.verve.browser.presentation.browser.viewmodel.PageAppearanceAndProgressController
@@ -10,14 +12,22 @@ import com.verve.browser.presentation.browser.viewmodel.SearchSuggestionsControl
 import com.verve.browser.presentation.browser.viewmodel.TabSessionController
 import com.verve.browser.presentation.browser.viewmodel.ToolbarAndCurtainController
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlin.time.Duration.Companion.milliseconds
 
+@OptIn(FlowPreview::class)
 class BrowserViewModel(
-    private val shouldBlockUrlUseCase: ShouldBlockUrlUseCase
+    private val shouldBlockUrlUseCase: ShouldBlockUrlUseCase,
+    private val tabSessionStorage: TabSessionStorage
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(BrowserUiState())
@@ -31,9 +41,91 @@ class BrowserViewModel(
     private val pageAppearanceController = PageAppearanceAndProgressController(uiState = _uiState)
     private val tabSessionController = TabSessionController(uiState = _uiState)
 
+    init {
+        tabSessionStorage.loadSync()?.let { restored ->
+            val activeTab = restored.tabs.firstOrNull { it.id == restored.activeTabId } ?: restored.tabs.first()
+            _uiState.update { state ->
+                state.copy(
+                    tabs = restored.tabs,
+                    tabStacks = restored.tabStacks,
+                    activeTabId = activeTab.id,
+                    currentUrl = activeTab.url,
+                    searchInput = activeTab.url,
+                    siteSeedColor = activeTab.siteSeedColor,
+                    pendingSiteSeedColor = activeTab.siteSeedColor,
+                    topRegionColor = activeTab.topRegionColor,
+                    bottomRegionColor = activeTab.bottomRegionColor
+                )
+            }
+        }
+
+        viewModelScope.launch {
+            _uiState
+                .map { state ->
+                    PersistedSessionSnapshot(
+                        tabs = state.tabs.filter { !it.isIncognito }.map { tab ->
+                            tab.copy(
+                                isMainFrameLoading = false,
+                                isLoading = false,
+                                loadingProgress = 0
+                            )
+                        },
+                        tabStacks = state.tabStacks,
+                        activeTabId = state.activeTabId
+                    )
+                }
+                .distinctUntilChanged()
+                .debounce(400L.milliseconds)
+                .collectLatest { snapshot ->
+                    tabSessionStorage.save(snapshot)
+                }
+        }
+    }
+
     fun openTabSwitcher() = tabSessionController.openTabSwitcher()
 
     fun closeTabSwitcher() = tabSessionController.closeTabSwitcher()
+
+    fun createNewTab(
+        initialUrl: String = "",
+        isIncognito: Boolean = false,
+        stackId: String? = null
+    ): String {
+        searchSuggestionsController.cancelPendingSuggestions()
+        return tabSessionController.createNewTab(
+            initialUrl = initialUrl,
+            isIncognito = isIncognito,
+            stackId = stackId
+        )
+    }
+
+    fun switchToTab(tabId: String) {
+        searchSuggestionsController.cancelPendingSuggestions()
+        tabSessionController.switchToTab(tabId)
+    }
+
+    fun closeTab(tabId: String, onTabClosed: (String) -> Unit = {}) {
+        tabSessionController.closeTab(tabId = tabId, onTabClosed = onTabClosed)
+    }
+
+    fun createTabStack(
+        tabIds: List<String>,
+        title: String,
+        seedColor: Color? = null
+    ): String? = tabSessionController.createTabStack(
+        tabIds = tabIds,
+        title = title,
+        seedColor = seedColor
+    )
+
+    fun addTabToStack(tabId: String, stackId: String) =
+        tabSessionController.addTabToStack(tabId = tabId, stackId = stackId)
+
+    fun removeTabFromStack(tabId: String) =
+        tabSessionController.removeTabFromStack(tabId = tabId)
+
+    fun toggleStackCollapsed(stackId: String) =
+        tabSessionController.toggleStackCollapsed(stackId = stackId)
 
     fun toggleIncognito() {
         _uiState.update { state ->
@@ -43,14 +135,28 @@ class BrowserViewModel(
                 if (tab.id == currentTab.id) {
                     tab.copy(
                         isIncognito = nextIncognito,
+                        stackId = if (nextIncognito) null else tab.stackId,
                         siteSeedColor = if (nextIncognito) null else tab.siteSeedColor
                     )
                 } else {
                     tab
                 }
             }
+            val tabCountsByStack = updatedTabs.mapNotNull { it.stackId }.groupingBy { it }.eachCount()
+            val validStackIds = tabCountsByStack.filterValues { it >= 2 }.keys
+            val normalizedTabs = updatedTabs.map { tab ->
+                if (tab.stackId != null && tab.stackId !in validStackIds) {
+                    tab.copy(stackId = null)
+                } else {
+                    tab
+                }
+            }
+            val normalizedStacks = state.tabStacks.filter { it.id in validStackIds }
+
             state.copy(
-                tabs = updatedTabs,
+                tabs = normalizedTabs,
+                tabStacks = normalizedStacks,
+                searchSuggestions = if (nextIncognito) emptyList() else state.recentSearches.take(4),
                 siteSeedColor = if (nextIncognito) null else state.siteSeedColor,
                 pendingSiteSeedColor = if (nextIncognito) null else state.pendingSiteSeedColor,
                 isThemeExtracting = if (nextIncognito) false else state.isThemeExtracting

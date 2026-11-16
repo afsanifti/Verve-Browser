@@ -1,8 +1,14 @@
 package com.verve.browser.presentation.browser.components
 
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -34,21 +40,32 @@ import androidx.compose.material.icons.rounded.Layers
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.ViewCarousel
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -58,7 +75,10 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.unit.times
 import androidx.compose.ui.zIndex
 import com.verve.browser.presentation.browser.BrowserTab
+import com.verve.browser.presentation.browser.TabStack
 import com.verve.browser.presentation.theme.VerveBrowserTheme
+import kotlin.math.abs
+import kotlinx.coroutines.launch
 
 private const val MaxVisibleBackgroundCards = 3
 private const val ReferenceDeviceWidthDp = 412f
@@ -66,28 +86,60 @@ private const val ReferenceCardWidthDp = 269f
 private const val ReferenceCardHeightDp = 564f
 private const val ReferenceCardAspectRatio = ReferenceCardWidthDp / ReferenceCardHeightDp
 
+private val StackCardSpring = spring<Float>(
+    dampingRatio = 0.80f,
+    stiffness = 420f
+)
+
+private val StackCardDpSpring = spring<Dp>(
+    dampingRatio = 0.80f,
+    stiffness = 420f
+)
+
 @Composable
 fun QuickTabsScreen(
     tabs: List<BrowserTab>,
+    tabStacks: List<TabStack>,
     activeTabId: String,
     thumbnailProvider: (String) -> ImageBitmap?,
     onBackClick: () -> Unit,
+    onSelectTab: (String) -> Unit,
+    onCloseTab: (String) -> Unit,
     onNewTabClick: () -> Unit,
+    onCreateTabStack: (List<String>, String) -> Unit = { _, _ -> },
+    onAddTabToStack: (String, String) -> Unit = { _, _ -> },
+    onRemoveTabFromStack: (String) -> Unit = {},
+    onToggleStackCollapsed: (String) -> Unit = {},
     onHistoryClick: () -> Unit = {},
     onLayoutToggleClick: () -> Unit = {},
-    onTabGroupsClick: () -> Unit = {},
     onSettingsClick: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     // Always use the system wallpaper/theme engine rather than the active webpage's seed color
     VerveBrowserTheme(siteSeedColor = null) {
-        val orderedTabs = remember(tabs, activeTabId) {
-            val active = tabs.firstOrNull { it.id == activeTabId } ?: tabs.firstOrNull()
-            if (active == null) {
+        var isStackSheetOpen by remember { mutableStateOf(false) }
+        var focusedTabId by remember { mutableStateOf(activeTabId) }
+
+        LaunchedEffect(tabs, activeTabId) {
+            if (tabs.none { it.id == focusedTabId }) {
+                focusedTabId = tabs.firstOrNull { it.id == activeTabId }?.id
+                    ?: tabs.firstOrNull()?.id
+                            ?: activeTabId
+            }
+        }
+
+        val orderedTabs = remember(tabs, focusedTabId) {
+            if (tabs.isEmpty()) {
                 emptyList()
             } else {
-                listOf(active) + tabs.filter { it.id != active.id }
+                val focusIndex = tabs.indexOfFirst { it.id == focusedTabId }.coerceAtLeast(0)
+                tabs.drop(focusIndex) + tabs.take(focusIndex)
             }
+        }
+
+        val focusedTab = orderedTabs.firstOrNull()
+        val focusedStack = remember(focusedTab, tabStacks) {
+            focusedTab?.stackId?.let { stackId -> tabStacks.firstOrNull { it.id == stackId } }
         }
 
         val topSafeInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Top)
@@ -103,6 +155,7 @@ fun QuickTabsScreen(
                     .windowInsetsPadding(topSafeInsets)
             ) {
                 QuickTabsTopBar(
+                    stackCount = tabStacks.size,
                     onBackClick = onBackClick,
                     onHistoryClick = onHistoryClick,
                     onLayoutToggleClick = onLayoutToggleClick
@@ -136,18 +189,61 @@ fun QuickTabsScreen(
 
                     QuickTabsCardStack(
                         tabs = orderedTabs,
+                        allTabsInOrder = tabs,
+                        activeStack = focusedStack,
                         thumbnailProvider = thumbnailProvider,
                         cardWidth = cardWidth,
                         cardHeight = cardHeight,
-                        onActiveCardClick = onBackClick
+                        onFocusTab = { targetId -> focusedTabId = targetId },
+                        onOpenFocusedTab = { tabId ->
+                            if (tabId == activeTabId) {
+                                onBackClick()
+                            } else {
+                                onSelectTab(tabId)
+                            }
+                        },
+                        onCloseTab = { tabId ->
+                            if (tabId == focusedTabId && tabs.size > 1) {
+                                val nextFocus = orderedTabs.getOrNull(1)?.id
+                                if (nextFocus != null) {
+                                    focusedTabId = nextFocus
+                                }
+                            }
+                            onCloseTab(tabId)
+                        }
                     )
                 }
 
                 QuickTabsBottomBar(
-                    onLayersClick = onTabGroupsClick,
+                    hasStacks = tabStacks.isNotEmpty(),
+                    onLayersClick = { isStackSheetOpen = true },
                     onNewTabClick = onNewTabClick,
                     onSettingsClick = onSettingsClick,
                     modifier = Modifier.windowInsetsPadding(bottomNavInsets)
+                )
+            }
+
+            if (isStackSheetOpen && focusedTab != null) {
+                TabStackManagementDialog(
+                    activeTab = focusedTab,
+                    allTabs = tabs,
+                    tabStacks = tabStacks,
+                    onDismiss = { isStackSheetOpen = false },
+                    onCreateTabStack = { tabIds, title ->
+                        onCreateTabStack(tabIds, title)
+                        isStackSheetOpen = false
+                    },
+                    onAddTabToStack = { tabId, stackId ->
+                        onAddTabToStack(tabId, stackId)
+                        isStackSheetOpen = false
+                    },
+                    onRemoveTabFromStack = { tabId ->
+                        onRemoveTabFromStack(tabId)
+                        isStackSheetOpen = false
+                    },
+                    onToggleStackCollapsed = { stackId ->
+                        onToggleStackCollapsed(stackId)
+                    }
                 )
             }
         }
@@ -156,6 +252,7 @@ fun QuickTabsScreen(
 
 @Composable
 private fun QuickTabsTopBar(
+    stackCount: Int,
     onBackClick: () -> Unit,
     onHistoryClick: () -> Unit,
     onLayoutToggleClick: () -> Unit,
@@ -180,7 +277,7 @@ private fun QuickTabsTopBar(
         Spacer(modifier = Modifier.width(4.dp))
 
         Text(
-            text = "Quick Tabs",
+            text = if (stackCount > 0) "Quick Tabs · $stackCount stacks" else "Quick Tabs",
             color = MaterialTheme.colorScheme.onSurface,
             style = MaterialTheme.typography.titleLarge.copy(
                 fontSize = 22.sp,
@@ -214,14 +311,27 @@ private fun QuickTabsTopBar(
 @Composable
 private fun QuickTabsCardStack(
     tabs: List<BrowserTab>,
+    allTabsInOrder: List<BrowserTab>,
+    activeStack: TabStack?,
     thumbnailProvider: (String) -> ImageBitmap?,
     cardWidth: Dp,
     cardHeight: Dp,
-    onActiveCardClick: () -> Unit,
+    onFocusTab: (String) -> Unit,
+    onOpenFocusedTab: (String) -> Unit,
+    onCloseTab: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val activeTab = tabs.firstOrNull() ?: return
     val backgroundTabs = tabs.drop(1).take(MaxVisibleBackgroundCards)
+    val density = LocalDensity.current
+    val haptic = LocalHapticFeedback.current
+    val coroutineScope = rememberCoroutineScope()
+
+    val swipeThresholdPx = with(density) { 64.dp.toPx() }
+    val cardWidthPx = with(density) { cardWidth.toPx() }.coerceAtLeast(1f)
+    val dragOffsetX = remember { Animatable(0f) }
+
+    val dragProgress = (abs(dragOffsetX.value) / (cardWidthPx * 0.65f)).coerceIn(0f, 1f)
 
     val foregroundHorizontalOffset = when (backgroundTabs.size) {
         0 -> 0.dp
@@ -232,43 +342,121 @@ private fun QuickTabsCardStack(
     val chipReserveHeight = 46.dp
 
     Box(
-        modifier = modifier.fillMaxSize(),
+        modifier = modifier
+            .fillMaxSize()
+            .pointerInput(allTabsInOrder, activeTab.id) {
+                if (allTabsInOrder.size <= 1) return@pointerInput
+                detectHorizontalDragGestures(
+                    onDragStart = {
+                        coroutineScope.launch { dragOffsetX.stop() }
+                    },
+                    onHorizontalDrag = { change, dragAmount ->
+                        change.consume()
+                        coroutineScope.launch {
+                            val clampedTarget = (dragOffsetX.value + dragAmount)
+                                .coerceIn(-cardWidthPx * 0.95f, cardWidthPx * 0.95f)
+                            dragOffsetX.snapTo(clampedTarget)
+                        }
+                    },
+                    onDragCancel = {
+                        coroutineScope.launch {
+                            dragOffsetX.animateTo(0f, StackCardSpring)
+                        }
+                    },
+                    onDragEnd = {
+                        val currentOffset = dragOffsetX.value
+                        val currentIndex = allTabsInOrder.indexOfFirst { it.id == activeTab.id }
+                            .coerceAtLeast(0)
+
+                        if (abs(currentOffset) >= swipeThresholdPx && allTabsInOrder.size > 1) {
+                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            val nextIndex = if (currentOffset > 0f) {
+                                // Swipe right peels top card to reveal next tab in stack
+                                (currentIndex + 1) % allTabsInOrder.size
+                            } else {
+                                // Swipe left brings previous tab in stack onto the front
+                                (currentIndex - 1 + allTabsInOrder.size) % allTabsInOrder.size
+                            }
+                            onFocusTab(allTabsInOrder[nextIndex].id)
+                        }
+
+                        coroutineScope.launch {
+                            dragOffsetX.animateTo(0f, StackCardSpring)
+                        }
+                    }
+                )
+            },
         contentAlignment = Alignment.Center
     ) {
         for (stackIndex in backgroundTabs.indices.reversed()) {
             val depth = stackIndex + 1
             val bgTab = backgroundTabs[stackIndex]
-            val scale = (1f - depth * 0.055f).coerceAtLeast(0.80f)
-            val horizontalStep = foregroundHorizontalOffset - (24.dp * depth)
-            val verticalStep = (chipReserveHeight / 2f) + (depth * 4.dp)
-            val dimAlpha = (depth * 0.10f).coerceAtMost(0.30f)
+
+            // As user drags the top card, promote the background cards smoothly toward the front
+            val effectiveDepth = (depth - dragProgress).coerceAtLeast(0f)
+            val targetScale = (1f - effectiveDepth * 0.055f).coerceAtLeast(0.80f)
+            val targetHorizontalStep = foregroundHorizontalOffset - (24.dp * effectiveDepth)
+            val targetVerticalStep = (chipReserveHeight / 2f) + (effectiveDepth * 4.dp)
+            val targetDimAlpha = (effectiveDepth * 0.10f).coerceAtMost(0.30f)
+
+            val animatedScale by animateFloatAsState(
+                targetValue = targetScale,
+                animationSpec = StackCardSpring,
+                label = "bgCardScale_$depth"
+            )
+            val animatedOffsetX by animateDpAsState(
+                targetValue = targetHorizontalStep,
+                animationSpec = StackCardDpSpring,
+                label = "bgCardOffsetX_$depth"
+            )
+            val animatedOffsetY by animateDpAsState(
+                targetValue = targetVerticalStep,
+                animationSpec = StackCardDpSpring,
+                label = "bgCardOffsetY_$depth"
+            )
 
             BackgroundStackedTabCard(
                 tab = bgTab,
                 thumbnail = thumbnailProvider(bgTab.id),
                 cardWidth = cardWidth,
                 cardHeight = cardHeight,
-                dimOverlayAlpha = dimAlpha,
+                dimOverlayAlpha = targetDimAlpha,
+                onClick = {
+                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                    onFocusTab(bgTab.id)
+                },
                 modifier = Modifier
                     .zIndex((MaxVisibleBackgroundCards - depth).toFloat())
-                    .offset(x = horizontalStep, y = verticalStep)
+                    .offset(x = animatedOffsetX, y = animatedOffsetY)
                     .graphicsLayer {
-                        scaleX = scale
-                        scaleY = scale
+                        scaleX = animatedScale
+                        scaleY = animatedScale
                     }
             )
         }
 
+        val animatedForegroundBaseX by animateDpAsState(
+            targetValue = foregroundHorizontalOffset,
+            animationSpec = StackCardDpSpring,
+            label = "fgCardBaseX"
+        )
+
         Column(
             modifier = Modifier
                 .zIndex((MaxVisibleBackgroundCards + 1).toFloat())
-                .offset(x = foregroundHorizontalOffset),
+                .offset(x = animatedForegroundBaseX)
+                .graphicsLayer {
+                    translationX = dragOffsetX.value
+                    rotationZ = (dragOffsetX.value / cardWidthPx) * 7f
+                },
             horizontalAlignment = Alignment.Start
         ) {
             ActiveTabDomainChip(
                 domain = resolveTabChipLabel(activeTab),
-                maxChipWidth = (cardWidth * 0.78f).coerceAtLeast(136.dp),
-                onClick = onActiveCardClick
+                stackTitle = activeStack?.title,
+                isIncognito = activeTab.isIncognito,
+                maxChipWidth = (cardWidth * 0.86f).coerceAtLeast(144.dp),
+                onClick = { onOpenFocusedTab(activeTab.id) }
             )
 
             Spacer(modifier = Modifier.height(10.dp))
@@ -278,7 +466,8 @@ private fun QuickTabsCardStack(
                 thumbnail = thumbnailProvider(activeTab.id),
                 cardWidth = cardWidth,
                 cardHeight = cardHeight,
-                onClick = onActiveCardClick
+                onClick = { onOpenFocusedTab(activeTab.id) },
+                onCloseClick = { onCloseTab(activeTab.id) }
             )
         }
     }
@@ -287,12 +476,23 @@ private fun QuickTabsCardStack(
 @Composable
 private fun ActiveTabDomainChip(
     domain: String,
+    stackTitle: String?,
+    isIncognito: Boolean,
     maxChipWidth: Dp,
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val chipColor = MaterialTheme.colorScheme.primaryContainer
     val contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+    val label = buildString {
+        if (!stackTitle.isNullOrBlank()) {
+            append(stackTitle)
+            append(" · ")
+        } else if (isIncognito) {
+            append("Incognito · ")
+        }
+        append(domain)
+    }
 
     Surface(
         onClick = onClick,
@@ -309,7 +509,7 @@ private fun ActiveTabDomainChip(
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
             Text(
-                text = domain,
+                text = label,
                 color = contentColor,
                 style = MaterialTheme.typography.labelSmall.copy(
                     fontSize = 13.sp,
@@ -339,6 +539,7 @@ private fun ForegroundTabCard(
     cardWidth: Dp,
     cardHeight: Dp,
     onClick: () -> Unit,
+    onCloseClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val cardSurfaceColor = resolveCardSurfaceColor(tab)
@@ -361,6 +562,7 @@ private fun ForegroundTabCard(
             )
 
             Surface(
+                onClick = onCloseClick,
                 modifier = Modifier
                     .align(Alignment.TopEnd)
                     .padding(10.dp)
@@ -388,11 +590,13 @@ private fun BackgroundStackedTabCard(
     cardWidth: Dp,
     cardHeight: Dp,
     dimOverlayAlpha: Float,
+    onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val cardSurfaceColor = resolveCardSurfaceColor(tab)
 
     Surface(
+        onClick = onClick,
         modifier = modifier
             .width(cardWidth)
             .height(cardHeight),
@@ -456,7 +660,7 @@ private fun TabCardThumbnailContent(
             }
             Spacer(modifier = Modifier.height(12.dp))
             Text(
-                text = "New Tab",
+                text = if (tab.isIncognito) "Incognito Tab" else "New Tab",
                 color = MaterialTheme.colorScheme.onSurface,
                 fontSize = 15.sp,
                 fontWeight = FontWeight.SemiBold,
@@ -512,7 +716,7 @@ private fun TabCardThumbnailContent(
 }
 
 private fun resolveTabChipLabel(tab: BrowserTab): String {
-    if (tab.url.isBlank()) return "New Tab"
+    if (tab.url.isBlank()) return if (tab.isIncognito) "Incognito" else "New Tab"
     return extractDisplayDomain(tab.url).ifBlank { tab.title.ifBlank { "Webpage" } }
 }
 
@@ -524,6 +728,7 @@ private fun resolveCardSurfaceColor(tab: BrowserTab): Color {
 
 @Composable
 private fun QuickTabsBottomBar(
+    hasStacks: Boolean,
     onLayersClick: () -> Unit,
     onNewTabClick: () -> Unit,
     onSettingsClick: () -> Unit,
@@ -542,8 +747,12 @@ private fun QuickTabsBottomBar(
         ) {
             Icon(
                 imageVector = Icons.Rounded.Layers,
-                contentDescription = "Tab groups",
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                contentDescription = "Tab stacks",
+                tint = if (hasStacks) {
+                    MaterialTheme.colorScheme.primary
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                },
                 modifier = Modifier.size(24.dp)
             )
         }
@@ -584,3 +793,97 @@ private fun QuickTabsBottomBar(
     }
 }
 
+@Composable
+private fun TabStackManagementDialog(
+    activeTab: BrowserTab,
+    allTabs: List<BrowserTab>,
+    tabStacks: List<TabStack>,
+    onDismiss: () -> Unit,
+    onCreateTabStack: (List<String>, String) -> Unit,
+    onAddTabToStack: (String, String) -> Unit,
+    onRemoveTabFromStack: (String) -> Unit,
+    onToggleStackCollapsed: (String) -> Unit
+) {
+    val ungroupedNormalTabs = remember(allTabs) {
+        allTabs.filter { !it.isIncognito && it.stackId == null }
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                text = "Tab Stacks",
+                style = MaterialTheme.typography.titleMedium
+            )
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                if (activeTab.stackId != null) {
+                    Text(
+                        text = "Current tab is in a stack.",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    TextButton(onClick = { onRemoveTabFromStack(activeTab.id) }) {
+                        Text("Remove current tab from stack")
+                    }
+                } else if (!activeTab.isIncognito && tabStacks.isNotEmpty()) {
+                    Text(
+                        text = "Add current tab to an existing stack:",
+                        style = MaterialTheme.typography.labelMedium
+                    )
+                    tabStacks.forEach { stack ->
+                        TextButton(onClick = { onAddTabToStack(activeTab.id, stack.id) }) {
+                            Text("Add to \"${stack.title}\"")
+                        }
+                    }
+                }
+
+                if (ungroupedNormalTabs.size >= 2) {
+                    TextButton(
+                        onClick = {
+                            val title = resolveTabChipLabel(ungroupedNormalTabs.first())
+                            onCreateTabStack(ungroupedNormalTabs.map { it.id }, title)
+                        }
+                    ) {
+                        Text("Stack ${ungroupedNormalTabs.size} open tabs")
+                    }
+                }
+
+                if (tabStacks.isNotEmpty()) {
+                    tabStacks.forEach { stack ->
+                        val count = allTabs.count { it.stackId == stack.id }
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { onToggleStackCollapsed(stack.id) }
+                                .padding(vertical = 4.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "${stack.title} ($count tabs)",
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                            Text(
+                                text = if (stack.isCollapsed) "Expand" else "Collapse",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                    }
+                } else if (ungroupedNormalTabs.size < 2) {
+                    Text(
+                        text = "Open at least 2 normal tabs to create a stack. Incognito tabs are never saved or stacked.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Done")
+            }
+        }
+    )
+}

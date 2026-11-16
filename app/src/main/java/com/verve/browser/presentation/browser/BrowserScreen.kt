@@ -131,10 +131,32 @@ fun BrowserScreen(
         if (uiState.isTabSwitcherOpen) {
             QuickTabsScreen(
                 tabs = uiState.tabs,
+                tabStacks = uiState.tabStacks,
                 activeTabId = uiState.activeTabId,
                 thumbnailProvider = thumbnailCache::get,
                 onBackClick = viewModel::closeTabSwitcher,
-                onNewTabClick = viewModel::closeTabSwitcher,
+                onSelectTab = { tabId ->
+                    viewModel.switchToTab(tabId)
+                },
+                onCloseTab = { tabId ->
+                    if (webViewRef?.tag == tabId) {
+                        webViewRef = null
+                    }
+                    viewModel.closeTab(tabId) { closedId ->
+                        tabWebViewPool.resetTab(closedId)
+                        thumbnailCache.remove(closedId)
+                    }
+                },
+                onNewTabClick = {
+                    webViewRef = null
+                    viewModel.createNewTab()
+                },
+                onCreateTabStack = { tabIds, title ->
+                    viewModel.createTabStack(tabIds = tabIds, title = title)
+                },
+                onAddTabToStack = viewModel::addTabToStack,
+                onRemoveTabFromStack = viewModel::removeTabFromStack,
+                onToggleStackCollapsed = viewModel::toggleStackCollapsed,
                 modifier = Modifier.fillMaxSize()
             )
         }

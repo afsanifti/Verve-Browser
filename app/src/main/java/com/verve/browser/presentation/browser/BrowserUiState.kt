@@ -4,6 +4,7 @@ import androidx.compose.ui.graphics.Color
 
 data class BrowserUiState(
     val tabs: List<BrowserTab> = listOf(BrowserTab(id = INITIAL_TAB_ID)),
+    val tabStacks: List<TabStack> = emptyList(),
     val activeTabId: String = INITIAL_TAB_ID,
     val currentUrl: String = "",
     val searchInput: String = "",
