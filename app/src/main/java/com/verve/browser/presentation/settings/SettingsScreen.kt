@@ -71,7 +71,6 @@ fun SettingsScreen(
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 16.dp, vertical = 8.dp)
         ) {
-            // Profile Section
             SettingsSectionLabel(text = "Profile")
             ExpressiveSegmentedGroup(
                 items = listOf(
@@ -100,7 +99,6 @@ fun SettingsScreen(
 
             Spacer(modifier = Modifier.height(22.dp))
 
-            // Browser Section
             SettingsSectionLabel(text = "Browser")
             ExpressiveSegmentedGroup(
                 items = listOf(
@@ -116,7 +114,6 @@ fun SettingsScreen(
 
             Spacer(modifier = Modifier.height(22.dp))
 
-            // General Section
             SettingsSectionLabel(text = "General")
             ExpressiveSegmentedGroup(
                 items = listOf(
@@ -131,9 +128,7 @@ fun SettingsScreen(
                         title = "About Verve",
                         trailingContent = if (hasUpdateAvailable) {
                             {
-                                Badge(
-                                    containerColor = MaterialTheme.colorScheme.primary
-                                )
+                                Badge(containerColor = MaterialTheme.colorScheme.primary)
                             }
                         } else {
                             null

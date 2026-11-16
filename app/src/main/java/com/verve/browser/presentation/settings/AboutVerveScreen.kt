@@ -53,7 +53,9 @@ fun AboutVerveScreen(
     modifier: Modifier = Modifier
 ) {
     LaunchedEffect(Unit) {
-        onCheckForUpdates()
+        if (!updateState.isDownloading && updateState.availableUpdate == null) {
+            onCheckForUpdates()
+        }
     }
 
     val animatedProgress by animateFloatAsState(
@@ -138,7 +140,7 @@ fun AboutVerveScreen(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // Update Status & Action Card
+            // Update Status & Progress Card
             Surface(
                 shape = RoundedCornerShape(24.dp),
                 color = MaterialTheme.colorScheme.surfaceContainer,
@@ -174,7 +176,11 @@ fun AboutVerveScreen(
                                 Spacer(modifier = Modifier.width(12.dp))
                                 Column {
                                     Text(
-                                        text = "Update available",
+                                        text = when {
+                                            updateState.isDownloading -> "Downloading update…"
+                                            updateState.readyApkFile != null -> "Update ready to install"
+                                            else -> "Update available"
+                                        },
                                         style = MaterialTheme.typography.titleMedium,
                                         fontWeight = FontWeight.SemiBold,
                                         color = MaterialTheme.colorScheme.onSurface
@@ -205,25 +211,67 @@ fun AboutVerveScreen(
 
                             if (updateState.isDownloading) {
                                 Spacer(modifier = Modifier.height(16.dp))
-                                LinearProgressIndicator(
-                                    progress = { animatedProgress },
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .height(8.dp)
-                                        .clip(RoundedCornerShape(999.dp))
-                                )
-                                Spacer(modifier = Modifier.height(6.dp))
-                                val percent = (updateState.downloadProgress * 100).toInt()
-                                val mbDone = updateState.downloadedBytes / (1024f * 1024f)
-                                val mbTotal = updateState.totalBytes / (1024f * 1024f)
+                                Surface(
+                                    shape = RoundedCornerShape(16.dp),
+                                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Column(modifier = Modifier.padding(14.dp)) {
+                                        Row(
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            modifier = Modifier.fillMaxWidth()
+                                        ) {
+                                            Text(
+                                                text = when {
+                                                    updateState.downloadedBytes <= 0L ->
+                                                        "Connecting to GitHub…"
+                                                    updateState.totalBytes > 0L ->
+                                                        "Downloaded: ${formatBytesMb(updateState.downloadedBytes)} / ${formatBytesMb(updateState.totalBytes)}"
+                                                    else ->
+                                                        "Downloaded: ${formatBytesMb(updateState.downloadedBytes)}"
+                                                },
+                                                style = MaterialTheme.typography.labelLarge,
+                                                fontWeight = FontWeight.Medium,
+                                                color = MaterialTheme.colorScheme.onSurface
+                                            )
+
+                                            if (updateState.downloadedBytes > 0L && updateState.totalBytes > 0L) {
+                                                Text(
+                                                    text = "${(updateState.downloadProgress * 100).toInt()}%",
+                                                    style = MaterialTheme.typography.labelLarge,
+                                                    fontWeight = FontWeight.SemiBold,
+                                                    color = MaterialTheme.colorScheme.primary
+                                                )
+                                            }
+                                        }
+
+                                        Spacer(modifier = Modifier.height(10.dp))
+
+                                        if (updateState.downloadedBytes > 0L && updateState.totalBytes > 0L) {
+                                            LinearProgressIndicator(
+                                                progress = { animatedProgress },
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .height(8.dp)
+                                                    .clip(RoundedCornerShape(999.dp))
+                                            )
+                                        } else {
+                                            LinearProgressIndicator(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .height(8.dp)
+                                                    .clip(RoundedCornerShape(999.dp))
+                                            )
+                                        }
+                                    }
+                                }
+                            } else if (updateState.readyApkFile != null) {
+                                Spacer(modifier = Modifier.height(14.dp))
                                 Text(
-                                    text = if (updateState.totalBytes > 0L) {
-                                        "Downloading… $percent% (%.1f / %.1f MB)".format(mbDone, mbTotal)
-                                    } else {
-                                        "Downloading… %.1f MB".format(mbDone)
-                                    },
-                                    style = MaterialTheme.typography.labelMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    text = "APK downloaded (${formatBytesMb(updateState.readyApkFile.length())}) and SHA-256 verified.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.primary
                                 )
                             }
 
@@ -256,14 +304,51 @@ fun AboutVerveScreen(
                                     enabled = !updateState.isDownloading,
                                     modifier = Modifier.weight(1f)
                                 ) {
-                                    Text(
-                                        when {
-                                            updateState.isDownloading -> "Downloading…"
-                                            updateState.readyApkFile != null -> "Install Verve"
-                                            else -> "Update Verve"
-                                        }
-                                    )
+                                    if (updateState.isDownloading) {
+                                        CircularProgressIndicator(
+                                            strokeWidth = 2.dp,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text(
+                                            if (updateState.downloadedBytes > 0L && updateState.totalBytes > 0L) {
+                                                "Downloading ${(updateState.downloadProgress * 100).toInt()}%"
+                                            } else {
+                                                "Starting…"
+                                            }
+                                        )
+                                    } else {
+                                        Text(
+                                            if (updateState.readyApkFile != null) {
+                                                "Install Verve"
+                                            } else {
+                                                "Update Verve"
+                                            }
+                                        )
+                                    }
                                 }
+                            }
+                        }
+
+                        !updateState.errorMessage.isNullOrBlank() -> {
+                            Text(
+                                text = "Update check failed",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Medium,
+                                color = MaterialTheme.colorScheme.error
+                            )
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text(
+                                text = updateState.errorMessage,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Spacer(modifier = Modifier.height(16.dp))
+                            OutlinedButton(
+                                onClick = onCheckForUpdates,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text("Retry")
                             }
                         }
 
@@ -284,15 +369,6 @@ fun AboutVerveScreen(
                                 )
                             }
 
-                            if (!updateState.errorMessage.isNullOrBlank()) {
-                                Spacer(modifier = Modifier.height(10.dp))
-                                Text(
-                                    text = updateState.errorMessage,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.error
-                                )
-                            }
-
                             Spacer(modifier = Modifier.height(16.dp))
 
                             OutlinedButton(
@@ -307,4 +383,9 @@ fun AboutVerveScreen(
             }
         }
     }
+}
+
+private fun formatBytesMb(bytes: Long): String {
+    val mb = bytes / (1024f * 1024f)
+    return "%.1f MB".format(mb)
 }
