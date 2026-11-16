@@ -31,9 +31,6 @@ jobs:
           distribution: temurin
           java-version: "21"
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v6
 
@@ -141,12 +138,12 @@ jobs:
         if: always()
         run: rm -f "${RUNNER_TEMP}/verve-release.keystore"
 
-      # Stage E: Verify APK, extract actual metadata, compute SHA-256 & generate update.json
       - name: Verify Signed APK & Generate update.json
         id: package
         run: |
           set -euo pipefail
 
+          ANDROID_SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
           RELEASE_DIR="release-apks"
           mkdir -p "${RELEASE_DIR}"
 
@@ -165,16 +162,16 @@ jobs:
           FINAL_APK="${RELEASE_DIR}/${APK_ASSET_NAME}"
           cp "${RAW_APK}" "${FINAL_APK}"
 
-          APKSIGNER=$(find "${ANDROID_HOME}/build-tools" -name "apksigner" | sort -V | tail -n 1)
+          APKSIGNER=$(find "${ANDROID_SDK}/build-tools" -name "apksigner" | sort -V | tail -n 1)
           if [[ -z "${APKSIGNER}" ]]; then
-            echo "::error::apksigner not found in ANDROID_HOME/build-tools."
+            echo "::error::apksigner not found in ${ANDROID_SDK}/build-tools."
             exit 1
           fi
           "${APKSIGNER}" verify --print-certs "${FINAL_APK}"
 
-          AAPT2=$(find "${ANDROID_HOME}/build-tools" -name "aapt2" | sort -V | tail -n 1)
+          AAPT2=$(find "${ANDROID_SDK}/build-tools" -name "aapt2" | sort -V | tail -n 1)
           if [[ -z "${AAPT2}" ]]; then
-            echo "::error::aapt2 not found in ANDROID_HOME/build-tools."
+            echo "::error::aapt2 not found in ${ANDROID_SDK}/build-tools."
             exit 1
           fi
 
@@ -315,7 +312,6 @@ jobs:
               --latest
           fi
 
-      # Stage F: Post-publish validation of the live public GitHub Release
       - name: Validate Published GitHub Release
         if: startsWith(github.ref, 'refs/tags/v')
         env:
@@ -324,6 +320,7 @@ jobs:
         run: |
           set -euo pipefail
 
+          ANDROID_SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
           EXPECTED_PACKAGE="com.verve.browser"
           EXPECTED_APK_ASSET="Verve-Browser.apk"
           VERIFY_DIR="${RUNNER_TEMP}/release-validation"
@@ -378,10 +375,10 @@ jobs:
             exit 1
           fi
 
-          APKSIGNER=$(find "${ANDROID_HOME}/build-tools" -name "apksigner" | sort -V | tail -n 1)
+          APKSIGNER=$(find "${ANDROID_SDK}/build-tools" -name "apksigner" | sort -V | tail -n 1)
           "${APKSIGNER}" verify --print-certs "${DOWNLOADED_APK}"
 
-          AAPT2=$(find "${ANDROID_HOME}/build-tools" -name "aapt2" | sort -V | tail -n 1)
+          AAPT2=$(find "${ANDROID_SDK}/build-tools" -name "aapt2" | sort -V | tail -n 1)
           BADGING=$("${AAPT2}" dump badging "${DOWNLOADED_APK}")
           APK_PACKAGE=$(echo "${BADGING}" | sed -n "s/.*package: name='\([^']*\)'.*/\1/p" | head -n 1)
           APK_VERSION_CODE=$(echo "${BADGING}" | sed -n "s/.*versionCode='\([^']*\)'.*/\1/p" | head -n 1)
