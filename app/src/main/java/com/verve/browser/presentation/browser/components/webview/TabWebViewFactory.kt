@@ -9,6 +9,7 @@ import android.os.SystemClock
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewConfiguration
+import android.webkit.CookieManager
 import android.webkit.WebSettings
 import android.webkit.WebView
 import androidx.core.view.ViewCompat
@@ -27,6 +28,10 @@ internal fun createTabWebView(
     tabWebViewPool: TabWebViewPool,
     thumbnailCache: TabThumbnailCache
 ): WebView {
+    val isTabIncognito: () -> Boolean = {
+        viewModel.uiState.value.tabs.firstOrNull { it.id == tabId }?.isIncognito == true
+    }
+
     return WebView(context).apply {
         setLayerType(View.LAYER_TYPE_HARDWARE, null)
         isNestedScrollingEnabled = true
@@ -42,19 +47,28 @@ internal fun createTabWebView(
             WindowInsetsCompat.CONSUMED
         }
 
+        val initialIncognito = isTabIncognito()
         settings.apply {
             javaScriptEnabled = true
             domStorageEnabled = true
-            databaseEnabled = true
+            databaseEnabled = !initialIncognito
             allowContentAccess = true
             useWideViewPort = true
             loadWithOverviewMode = true
             setSupportZoom(true)
             builtInZoomControls = true
             displayZoomControls = false
-            setSupportMultipleWindows(true)
+            setSupportMultipleWindows(false)
             mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
             userAgentString = userAgentString.replace("; wv)", ")")
+            if (initialIncognito) {
+                cacheMode = WebSettings.LOAD_NO_CACHE
+                @Suppress("DEPRECATION")
+                saveFormData = false
+            }
+        }
+        if (initialIncognito) {
+            CookieManager.getInstance().setAcceptThirdPartyCookies(this, false)
         }
 
         val mainHandler = Handler(Looper.getMainLooper())
@@ -95,6 +109,10 @@ internal fun createTabWebView(
         }
 
         val extractSnapshotColorRunnable = Runnable {
+            if (isTabIncognito()) {
+                viewModel.onSnapshotColorReady(tabId, null)
+                return@Runnable
+            }
             if (!canSafelyAccessWebView()) {
                 viewModel.onSnapshotColorReady(tabId, null)
                 return@Runnable
@@ -119,7 +137,7 @@ internal fun createTabWebView(
         }
 
         val silentSnapshotColorRunnable = Runnable {
-            if (!canSafelyAccessWebView()) return@Runnable
+            if (isTabIncognito() || !canSafelyAccessWebView()) return@Runnable
             if (isScrollBusy()) {
                 pendingSnapshotColorAfterScroll = true
                 return@Runnable
@@ -141,7 +159,9 @@ internal fun createTabWebView(
         val scheduleSnapshotColorExtract: (Long) -> Unit = { delayMs ->
             if (!isDestroyed) {
                 mainHandler.removeCallbacks(extractSnapshotColorRunnable)
-                if (isScrollBusy()) {
+                if (isTabIncognito()) {
+                    viewModel.onSnapshotColorReady(tabId, null)
+                } else if (isScrollBusy()) {
                     pendingSnapshotColorAfterScroll = true
                     viewModel.onSnapshotColorReady(tabId, null)
                 } else {
@@ -151,7 +171,7 @@ internal fun createTabWebView(
         }
 
         val scheduleSilentSnapshotColorExtract: (Long) -> Unit = { delayMs ->
-            if (!isDestroyed) {
+            if (!isDestroyed && !isTabIncognito()) {
                 mainHandler.removeCallbacks(silentSnapshotColorRunnable)
                 if (isScrollBusy()) {
                     pendingSnapshotColorAfterScroll = true
@@ -162,7 +182,7 @@ internal fun createTabWebView(
         }
 
         val domMutationSnapshotRunnable = Runnable {
-            if (!canSafelyAccessWebView() || isScrollBusy()) return@Runnable
+            if (isTabIncognito() || !canSafelyAccessWebView() || isScrollBusy()) return@Runnable
             val now = SystemClock.uptimeMillis()
             if (now - lastDomSnapshotTimestampMs < 1100L) return@Runnable
             lastDomSnapshotTimestampMs = now
@@ -175,7 +195,7 @@ internal fun createTabWebView(
         }
 
         val onDomVisualMutation: () -> Unit = {
-            if (!isDestroyed && !isScrollBusy()) {
+            if (!isDestroyed && !isScrollBusy() && !isTabIncognito()) {
                 mainHandler.removeCallbacks(domMutationSnapshotRunnable)
                 mainHandler.postDelayed(domMutationSnapshotRunnable, 650L)
             }
@@ -329,6 +349,13 @@ internal fun createTabWebView(
             onNavigatedUrl = { navigatedUrl ->
                 lastRequestedCollapsed = false
                 accumulatedScrollDy = 0
+                if (isTabIncognito()) {
+                    settings.cacheMode = WebSettings.LOAD_NO_CACHE
+                    settings.databaseEnabled = false
+                    @Suppress("DEPRECATION")
+                    settings.saveFormData = false
+                    CookieManager.getInstance().setAcceptThirdPartyCookies(this@apply, false)
+                }
                 tabWebViewPool.setLastRequestedUrl(tabId, navigatedUrl)
                 viewModel.onPageUrlUpdated(tabId, navigatedUrl)
             },

@@ -58,9 +58,11 @@ fun ExpressiveBottomToolbar(
     isCollapsed: Boolean = false,
     isSearchFocused: Boolean = false,
     isPageLoading: Boolean = false,
+    isIncognito: Boolean = false,
     bottomWindowInsets: WindowInsets = WindowInsets.navigationBars.only(WindowInsetsSides.Bottom),
     onSearchFocusChanged: (Boolean) -> Unit = {},
     onCollapsedChange: (Boolean) -> Unit = {},
+    onToggleIncognito: () -> Unit = {},
     onLeftActionClick: () -> Unit = {},
     onSiteSettingsClick: () -> Unit = {},
     onRefreshClick: () -> Unit = {},
@@ -201,6 +203,7 @@ fun ExpressiveBottomToolbar(
                 isCollapsed = effectiveCollapsed,
                 isPageLoading = isPageLoading,
                 isThemeLoading = isThemeLoading,
+                isIncognito = isIncognito,
                 expandProgress = expandProgress,
                 onThemeAnimationCompleted = onThemeAnimationCompleted,
                 onFocusChanged = onSearchFocusChanged,
@@ -208,6 +211,7 @@ fun ExpressiveBottomToolbar(
                 onSiteSettingsClick = onSiteSettingsClick,
                 onRefreshClick = onRefreshClick,
                 onStopLoadingClick = onStopLoadingClick,
+                onToggleIncognito = onToggleIncognito,
                 modifier = Modifier.width(currentPillWidth)
             )
 

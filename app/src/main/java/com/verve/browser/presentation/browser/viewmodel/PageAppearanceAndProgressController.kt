@@ -41,6 +41,8 @@ internal class PageAppearanceAndProgressController(
 
     fun onPageLoadStarted(tabId: String) {
         uiState.update { state ->
+            val targetTab = state.tabs.firstOrNull { it.id == tabId }
+            val isIncognito = targetTab?.isIncognito == true
             val updatedTabs = state.tabs.map { tab ->
                 if (tab.id == tabId) {
                     tab.copy(
@@ -57,7 +59,7 @@ internal class PageAppearanceAndProgressController(
                     tabs = updatedTabs,
                     isLoading = true,
                     loadingProgress = 0,
-                    isThemeExtracting = true,
+                    isThemeExtracting = !isIncognito,
                     pendingSiteSeedColor = null
                 )
             } else {
@@ -95,6 +97,7 @@ internal class PageAppearanceAndProgressController(
     fun onThemeExtractionStarted(tabId: String) {
         uiState.update { state ->
             val targetTab = state.tabs.firstOrNull { it.id == tabId }
+            if (targetTab?.isIncognito == true) return@update state
             if (tabId == state.activeTabId && targetTab?.isMainFrameLoading == true) {
                 state.copy(
                     isThemeExtracting = true,
@@ -108,15 +111,29 @@ internal class PageAppearanceAndProgressController(
 
     fun onSnapshotColorReady(tabId: String, color: Color?) {
         uiState.update { state ->
+            val targetTab = state.tabs.firstOrNull { it.id == tabId }
+            val isIncognito = targetTab?.isIncognito == true
+            val effectiveColor = if (isIncognito) null else color
+
             val updatedTabs = state.tabs.map { tab ->
                 if (tab.id == tabId) {
-                    tab.copy(siteSeedColor = color ?: if (state.isThemeExtracting) null else tab.siteSeedColor)
+                    tab.copy(
+                        siteSeedColor = if (isIncognito) {
+                            null
+                        } else {
+                            effectiveColor ?: if (state.isThemeExtracting) null else tab.siteSeedColor
+                        }
+                    )
                 } else {
                     tab
                 }
             }
             if (tabId == state.activeTabId) {
-                val resolvedColor = color ?: if (state.isThemeExtracting) null else state.siteSeedColor
+                val resolvedColor = if (isIncognito) {
+                    null
+                } else {
+                    effectiveColor ?: if (state.isThemeExtracting) null else state.siteSeedColor
+                }
                 state.copy(
                     tabs = updatedTabs,
                     siteSeedColor = resolvedColor,
@@ -133,7 +150,7 @@ internal class PageAppearanceAndProgressController(
     fun onThemeGradientAnimationCompleted() {
         uiState.update { state ->
             state.copy(
-                siteSeedColor = state.pendingSiteSeedColor ?: state.siteSeedColor,
+                siteSeedColor = if (state.isIncognito) null else (state.pendingSiteSeedColor ?: state.siteSeedColor),
                 isThemeExtracting = false
             )
         }
@@ -150,14 +167,16 @@ internal class PageAppearanceAndProgressController(
 
     fun updateSiteSeedColor(tabId: String, color: Color?) {
         uiState.update { state ->
+            val targetTab = state.tabs.firstOrNull { it.id == tabId }
+            val resolvedColor = if (targetTab?.isIncognito == true) null else color
             val updatedTabs = state.tabs.map { tab ->
-                if (tab.id == tabId) tab.copy(siteSeedColor = color) else tab
+                if (tab.id == tabId) tab.copy(siteSeedColor = resolvedColor) else tab
             }
             if (tabId == state.activeTabId) {
                 state.copy(
                     tabs = updatedTabs,
-                    siteSeedColor = color,
-                    pendingSiteSeedColor = color,
+                    siteSeedColor = resolvedColor,
+                    pendingSiteSeedColor = resolvedColor,
                     isThemeExtracting = false
                 )
             } else {

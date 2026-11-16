@@ -40,7 +40,10 @@ class MainActivity : ComponentActivity() {
         setContent {
             val uiState by viewModel.uiState.collectAsState()
 
-            VerveBrowserTheme(siteSeedColor = uiState.siteSeedColor) {
+            VerveBrowserTheme(
+                siteSeedColor = uiState.siteSeedColor,
+                isIncognito = uiState.isIncognito
+            ) {
                 Surface {
                     BrowserScreen(viewModel = viewModel)
                 }

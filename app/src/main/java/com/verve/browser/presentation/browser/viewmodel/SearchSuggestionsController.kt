@@ -26,15 +26,17 @@ internal class SearchSuggestionsController(
 
     fun onSearchFocusChanged(focused: Boolean) {
         uiState.update { state ->
-            val initialSuggestions = if (focused) {
-                val query = state.searchInput.trim()
-                if (query.isEmpty() || query == state.currentUrl) {
-                    state.recentSearches.take(4)
-                } else {
-                    state.searchSuggestions
+            val initialSuggestions = when {
+                state.isIncognito -> emptyList()
+                focused -> {
+                    val query = state.searchInput.trim()
+                    if (query.isEmpty() || query == state.currentUrl) {
+                        state.recentSearches.take(4)
+                    } else {
+                        state.searchSuggestions
+                    }
                 }
-            } else {
-                state.searchSuggestions
+                else -> state.searchSuggestions
             }
             state.copy(
                 isSearchFocused = focused,
@@ -52,9 +54,16 @@ internal class SearchSuggestionsController(
 
     private fun updateSuggestionsForQuery(rawQuery: String) {
         suggestionJob?.cancel()
-        val query = rawQuery.trim()
         val currentState = uiState.value
 
+        if (currentState.isIncognito) {
+            uiState.update {
+                it.copy(searchSuggestions = emptyList())
+            }
+            return
+        }
+
+        val query = rawQuery.trim()
         if (query.isEmpty() || query == currentState.currentUrl) {
             uiState.update {
                 it.copy(searchSuggestions = it.recentSearches.take(4))
@@ -72,12 +81,13 @@ internal class SearchSuggestionsController(
 
         suggestionJob = scope.launch {
             delay(160L)
+            if (uiState.value.isIncognito) return@launch
             val remoteSuggestions = fetchRemoteSuggestions(query)
             val combined = (localMatches + remoteSuggestions)
                 .distinctBy { it.lowercase() }
                 .take(4)
 
-            if (combined.isNotEmpty()) {
+            if (combined.isNotEmpty() && !uiState.value.isIncognito) {
                 uiState.update { it.copy(searchSuggestions = combined) }
             }
         }

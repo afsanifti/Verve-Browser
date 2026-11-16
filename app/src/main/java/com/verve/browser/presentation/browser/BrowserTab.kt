@@ -6,6 +6,7 @@ data class BrowserTab(
     val id: String,
     val url: String = "",
     val title: String = "",
+    val isIncognito: Boolean = false,
     val siteSeedColor: Color? = null,
     val topRegionColor: Color? = null,
     val bottomRegionColor: Color? = null,

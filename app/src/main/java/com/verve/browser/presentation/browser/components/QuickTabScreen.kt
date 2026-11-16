@@ -28,9 +28,12 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
+import androidx.compose.material.icons.rounded.Layers
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.ViewCarousel
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -43,11 +46,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
-import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.luminance
-import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.graphics.vector.PathParser
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -182,8 +182,10 @@ private fun QuickTabsTopBar(
         Text(
             text = "Quick Tabs",
             color = MaterialTheme.colorScheme.onSurface,
-            fontSize = 22.sp,
-            fontWeight = FontWeight.Normal,
+            style = MaterialTheme.typography.titleLarge.copy(
+                fontSize = 22.sp,
+                fontWeight = FontWeight.W500
+            ),
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.weight(1f)
@@ -191,7 +193,7 @@ private fun QuickTabsTopBar(
 
         IconButton(onClick = onHistoryClick) {
             Icon(
-                imageVector = HistoryVectorIcon,
+                imageVector = Icons.Rounded.History,
                 contentDescription = "History",
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.size(24.dp)
@@ -200,7 +202,7 @@ private fun QuickTabsTopBar(
 
         IconButton(onClick = onLayoutToggleClick) {
             Icon(
-                imageVector = CarouselLayoutVectorIcon,
+                imageVector = Icons.Rounded.ViewCarousel,
                 contentDescription = "Tab layout",
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.size(24.dp)
@@ -309,8 +311,10 @@ private fun ActiveTabDomainChip(
             Text(
                 text = domain,
                 color = contentColor,
-                fontSize = 13.sp,
-                fontWeight = FontWeight.Medium,
+                style = MaterialTheme.typography.labelSmall.copy(
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Medium
+                ),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f, fill = false)
@@ -537,7 +541,7 @@ private fun QuickTabsBottomBar(
             modifier = Modifier.size(48.dp)
         ) {
             Icon(
-                imageVector = LayersVectorIcon,
+                imageVector = Icons.Rounded.Layers,
                 contentDescription = "Tab groups",
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.size(24.dp)
@@ -580,57 +584,3 @@ private fun QuickTabsBottomBar(
     }
 }
 
-private val HistoryVectorIcon: ImageVector by lazy {
-    ImageVector.Builder(
-        name = "History",
-        defaultWidth = 24.dp,
-        defaultHeight = 24.dp,
-        viewportWidth = 24f,
-        viewportHeight = 24f
-    ).apply {
-        addPath(
-            pathData = PathParser().parsePathString(
-                "M13,3c-4.97,0 -9,4.03 -9,9L1,12l3.89,3.89 0.07,0.14L9,12L6,12c0,-3.87 3.13,-7 7,-7s7,3.13 7,7 -3.13,7 -7,7c-1.93,0 -3.68,-0.79 -4.94,-2.06l-1.42,1.42C8.27,19.99 10.51,21 13,21c4.97,0 9,-4.03 9,-9s-4.03,-9 -9,-9z " +
-                        "M12,8v5l4.28,2.54 0.72,-1.21 -3.5,-2.08L13.5,8L12,8z"
-            ).toNodes(),
-            fill = SolidColor(Color.Black)
-        )
-    }.build()
-}
-
-private val CarouselLayoutVectorIcon: ImageVector by lazy {
-    ImageVector.Builder(
-        name = "CarouselLayout",
-        defaultWidth = 24.dp,
-        defaultHeight = 24.dp,
-        viewportWidth = 24f,
-        viewportHeight = 24f
-    ).apply {
-        addPath(
-            pathData = PathParser().parsePathString(
-                "M7,19h10L17,4L7,4v15z " +
-                        "M2,17h4L6,6L2,6v11z " +
-                        "M18,6v11h4L22,6h-4z"
-            ).toNodes(),
-            fill = SolidColor(Color.Black)
-        )
-    }.build()
-}
-
-private val LayersVectorIcon: ImageVector by lazy {
-    ImageVector.Builder(
-        name = "Layers",
-        defaultWidth = 24.dp,
-        defaultHeight = 24.dp,
-        viewportWidth = 24f,
-        viewportHeight = 24f
-    ).apply {
-        addPath(
-            pathData = PathParser().parsePathString(
-                "M11.99,18.54l-7.37,-5.73L3,14.07l9,7 9,-7 -1.63,-1.27 -7.38,5.74z " +
-                        "M12,16l7.36,-5.73L21,9l-9,-7 -9,7 1.63,1.27L12,16z"
-            ).toNodes(),
-            fill = SolidColor(Color.Black)
-        )
-    }.build()
-}

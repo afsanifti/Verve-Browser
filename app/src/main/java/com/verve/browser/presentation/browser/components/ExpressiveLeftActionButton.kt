@@ -25,12 +25,12 @@ fun ExpressiveLeftActionButton(
     modifier: Modifier = Modifier
 ) {
     val containerColor by animateColorAsState(
-        targetValue = MaterialTheme.colorScheme.secondaryContainer,
+        targetValue = MaterialTheme.colorScheme.tertiaryContainer,
         animationSpec = tween(durationMillis = 300, easing = FastOutSlowInEasing),
         label = "leftButtonContainerColor"
     )
     val contentColor by animateColorAsState(
-        targetValue = MaterialTheme.colorScheme.onSecondaryContainer,
+        targetValue = MaterialTheme.colorScheme.onTertiaryContainer,
         animationSpec = tween(durationMillis = 300, easing = FastOutSlowInEasing),
         label = "leftButtonContentColor"
     )

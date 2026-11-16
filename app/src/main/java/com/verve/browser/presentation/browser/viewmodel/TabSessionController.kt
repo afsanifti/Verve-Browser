@@ -73,15 +73,22 @@ internal class TabSessionController(
         val destinationUrl = UrlDestinationResolver.resolve(trimmed)
 
         uiState.update { state ->
-            val updatedRecents = (listOf(trimmed) + state.recentSearches)
-                .distinctBy { it.lowercase() }
-                .take(8)
+            val isIncognito = state.isIncognito
+
+            val updatedRecents = if (isIncognito) {
+                state.recentSearches
+            } else {
+                (listOf(trimmed) + state.recentSearches)
+                    .distinctBy { it.lowercase() }
+                    .take(8)
+            }
 
             val updatedTabs = state.tabs.map { tab ->
                 if (tab.id == state.activeTabId) {
                     tab.copy(
                         url = destinationUrl,
                         title = "",
+                        siteSeedColor = if (isIncognito) null else tab.siteSeedColor,
                         isMainFrameLoading = true,
                         isLoading = true,
                         loadingProgress = 0,
@@ -99,9 +106,10 @@ internal class TabSessionController(
                 isSearchFocused = false,
                 isTabSwitcherOpen = false,
                 recentSearches = updatedRecents,
-                searchSuggestions = updatedRecents.take(4),
+                searchSuggestions = if (isIncognito) emptyList() else updatedRecents.take(4),
+                siteSeedColor = if (isIncognito) null else state.siteSeedColor,
                 pendingSiteSeedColor = null,
-                isThemeExtracting = true,
+                isThemeExtracting = !isIncognito,
                 bottomCurtainProgress = 0f,
                 hasFixedBottomBar = false,
                 isPageReadyToReveal = false,

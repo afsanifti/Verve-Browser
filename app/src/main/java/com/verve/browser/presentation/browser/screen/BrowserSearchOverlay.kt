@@ -73,7 +73,7 @@ internal fun BrowserSearchOverlay(
             verticalArrangement = Arrangement.Bottom
         ) {
             AnimatedVisibility(
-                visible = uiState.isSearchFocused && uiState.searchSuggestions.isNotEmpty(),
+                visible = uiState.isSearchFocused && !uiState.isIncognito && uiState.searchSuggestions.isNotEmpty(),
                 enter = fadeIn(),
                 exit = fadeOut()
             ) {
@@ -107,11 +107,13 @@ internal fun BrowserSearchOverlay(
                 isCollapsed = uiState.isToolbarCollapsed,
                 isSearchFocused = uiState.isSearchFocused,
                 isPageLoading = uiState.isLoading,
+                isIncognito = uiState.isIncognito,
                 bottomWindowInsets = bottomNavInsets,
                 onSearchFocusChanged = viewModel::onSearchFocusChanged,
                 onCollapsedChange = { collapsed ->
                     viewModel.setToolbarCollapsed(collapsed = collapsed, isManual = true)
                 },
+                onToggleIncognito = viewModel::toggleIncognito,
                 onRefreshClick = {
                     webViewRef?.reload()
                 },

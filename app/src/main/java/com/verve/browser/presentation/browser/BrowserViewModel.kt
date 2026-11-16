@@ -35,6 +35,29 @@ class BrowserViewModel(
 
     fun closeTabSwitcher() = tabSessionController.closeTabSwitcher()
 
+    fun toggleIncognito() {
+        _uiState.update { state ->
+            val currentTab = state.activeTab ?: return@update state
+            val nextIncognito = !currentTab.isIncognito
+            val updatedTabs = state.tabs.map { tab ->
+                if (tab.id == currentTab.id) {
+                    tab.copy(
+                        isIncognito = nextIncognito,
+                        siteSeedColor = if (nextIncognito) null else tab.siteSeedColor
+                    )
+                } else {
+                    tab
+                }
+            }
+            state.copy(
+                tabs = updatedTabs,
+                siteSeedColor = if (nextIncognito) null else state.siteSeedColor,
+                pendingSiteSeedColor = if (nextIncognito) null else state.pendingSiteSeedColor,
+                isThemeExtracting = if (nextIncognito) false else state.isThemeExtracting
+            )
+        }
+    }
+
     fun onSearchFocusChanged(focused: Boolean) =
         searchSuggestionsController.onSearchFocusChanged(focused)
 
@@ -62,19 +85,32 @@ class BrowserViewModel(
     fun onPageLoadFinished(tabId: String) =
         pageAppearanceController.onPageLoadFinished(tabId = tabId)
 
-    fun onThemeExtractionStarted(tabId: String) =
+    fun onThemeExtractionStarted(tabId: String) {
+        if (_uiState.value.tabs.firstOrNull { it.id == tabId }?.isIncognito == true) return
         pageAppearanceController.onThemeExtractionStarted(tabId = tabId)
+    }
 
-    fun onSnapshotColorReady(tabId: String, color: Color?) =
+    fun onSnapshotColorReady(tabId: String, color: Color?) {
+        if (_uiState.value.tabs.firstOrNull { it.id == tabId }?.isIncognito == true) {
+            pageAppearanceController.onSnapshotColorReady(tabId = tabId, color = null)
+            return
+        }
         pageAppearanceController.onSnapshotColorReady(tabId = tabId, color = color)
+    }
 
     fun onThemeGradientAnimationCompleted() =
         pageAppearanceController.onThemeGradientAnimationCompleted()
 
     fun onRevealTimeout() = pageAppearanceController.onRevealTimeout()
 
-    fun updateSiteSeedColor(tabId: String, color: Color?) =
-        pageAppearanceController.updateSiteSeedColor(tabId = tabId, color = color)
+    fun updateSiteSeedColor(tabId: String, color: Color?) {
+        val resolvedColor = if (_uiState.value.tabs.firstOrNull { it.id == tabId }?.isIncognito == true) {
+            null
+        } else {
+            color
+        }
+        pageAppearanceController.updateSiteSeedColor(tabId = tabId, color = resolvedColor)
+    }
 
     fun updateTopRegionColor(tabId: String, color: Color?) =
         pageAppearanceController.updateTopRegionColor(tabId = tabId, color = color)

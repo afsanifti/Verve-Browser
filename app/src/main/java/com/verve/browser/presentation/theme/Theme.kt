@@ -1,15 +1,11 @@
 package com.verve.browser.presentation.theme
 
+import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.movableContentOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import com.materialkolor.PaletteStyle
@@ -19,63 +15,39 @@ import com.materialkolor.material3.DynamicMaterialExpressiveTheme
 @Composable
 fun VerveBrowserTheme(
     siteSeedColor: Color? = null,
+    isIncognito: Boolean = false,
     isDark: Boolean = isSystemInDarkTheme(),
-    content: @Composable () -> Unit
-) {
-    val latestContent by rememberUpdatedState(content)
-    val preservedContent = remember {
-        movableContentOf {
-            latestContent()
-        }
-    }
-
-    if (siteSeedColor != null) {
-        WebsiteSnapshotThemeEngine(
-            seedColor = siteSeedColor,
-            isDark = isDark,
-            content = preservedContent
-        )
-    } else {
-        WallpaperThemeEngine(
-            isDark = isDark,
-            content = preservedContent
-        )
-    }
-}
-
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
-@Composable
-private fun WebsiteSnapshotThemeEngine(
-    seedColor: Color,
-    isDark: Boolean,
-    content: @Composable () -> Unit
-) {
-    DynamicMaterialExpressiveTheme(
-        typography = AppTypography,
-        seedColor = seedColor,
-        isDark = isDark,
-        style = PaletteStyle.Vibrant,
-        content = content
-    )
-}
-
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
-@Composable
-private fun WallpaperThemeEngine(
-    isDark: Boolean,
     content: @Composable () -> Unit
 ) {
     val context = LocalContext.current
 
-    val systemColorScheme = if (isDark) {
-        dynamicDarkColorScheme(context)
+    val wallpaperSeedColor = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+        if (isDark) {
+            dynamicDarkColorScheme(context).primary
+        } else {
+            dynamicLightColorScheme(context).primary
+        }
     } else {
-        dynamicLightColorScheme(context)
+        Color(0xFF6750A4)
     }
 
-    MaterialTheme(
-        colorScheme = systemColorScheme,
+    val resolvedSeedColor = when {
+        isIncognito -> Color(0xFF8E8E93)
+        siteSeedColor != null -> siteSeedColor
+        else -> wallpaperSeedColor
+    }
+
+    val resolvedStyle = when {
+        isIncognito -> PaletteStyle.Monochrome
+        siteSeedColor != null -> PaletteStyle.Vibrant
+        else -> PaletteStyle.TonalSpot
+    }
+
+    DynamicMaterialExpressiveTheme(
         typography = AppTypography,
+        seedColor = resolvedSeedColor,
+        isDark = isDark,
+        style = resolvedStyle,
         content = content
     )
 }
