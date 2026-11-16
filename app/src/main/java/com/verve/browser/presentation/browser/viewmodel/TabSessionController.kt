@@ -33,6 +33,7 @@ internal class TabSessionController(
                         siteSeedColor = null,
                         topRegionColor = null,
                         bottomRegionColor = null,
+                        isMainFrameLoading = false,
                         isLoading = false,
                         loadingProgress = 0,
                         canGoBack = false,
@@ -49,6 +50,7 @@ internal class TabSessionController(
                 isSearchFocused = false,
                 isTabSwitcherOpen = false,
                 siteSeedColor = null,
+                pendingSiteSeedColor = null,
                 topRegionColor = null,
                 bottomRegionColor = null,
                 bottomCurtainProgress = 0f,
@@ -80,9 +82,7 @@ internal class TabSessionController(
                     tab.copy(
                         url = destinationUrl,
                         title = "",
-                        siteSeedColor = null,
-                        topRegionColor = null,
-                        bottomRegionColor = null,
+                        isMainFrameLoading = true,
                         isLoading = true,
                         loadingProgress = 0,
                         lastAccessedAt = System.currentTimeMillis()
@@ -100,14 +100,15 @@ internal class TabSessionController(
                 isTabSwitcherOpen = false,
                 recentSearches = updatedRecents,
                 searchSuggestions = updatedRecents.take(4),
-                siteSeedColor = null,
-                topRegionColor = null,
-                bottomRegionColor = null,
+                pendingSiteSeedColor = null,
+                isThemeExtracting = true,
                 bottomCurtainProgress = 0f,
                 hasFixedBottomBar = false,
                 isPageReadyToReveal = false,
                 isToolbarCollapsed = false,
-                isToolbarManuallyCollapsed = false
+                isToolbarManuallyCollapsed = false,
+                isLoading = true,
+                loadingProgress = 0
             )
         }
     }

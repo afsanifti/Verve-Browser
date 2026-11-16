@@ -29,6 +29,7 @@ internal class VerveWebViewClient(
     private val bottomCoordinator: DocumentBottomScrollCoordinator,
     private val scheduleThumbnailCapture: (Long) -> Unit,
     private val scheduleSnapshotColorExtract: (Long) -> Unit,
+    private val scheduleSilentSnapshotColorExtract: (Long) -> Unit,
     private val onNavigatedUrl: (String) -> Unit,
     private val onWebViewDestroyed: () -> Unit
 ) : WebViewClient() {
@@ -102,8 +103,7 @@ internal class VerveWebViewClient(
                 isShowingErrorPage = false
             }
 
-            // Step 1: Begin the pill gradient sweep while holding the current bottom bar color
-            viewModel.onThemeExtractionStarted(tabId)
+            viewModel.onPageLoadStarted(tabId)
 
             val normalizedUrl = WebSnapshotColorExtractor.normalizeUrl(url)
             val cached = pageColorCache.get(normalizedUrl)
@@ -132,17 +132,6 @@ internal class VerveWebViewClient(
             attemptedFallbackUrls.clear()
             edgeProbeScheduler.scheduleDebounced(40L)
             scheduleThumbnailCapture(180L)
-        }
-    }
-
-    override fun onPageFinished(view: WebView?, url: String?) {
-        super.onPageFinished(view, url)
-        isMainFrameLoading = false
-
-        if (!url.isNullOrBlank() && url != "about:blank" && !isShowingErrorPage) {
-            edgeProbeScheduler.scheduleDebounced(160L)
-            edgeProbeScheduler.attachDomMutationObserver()
-            scheduleThumbnailCapture(320L)
 
             val normalizedUrl = WebSnapshotColorExtractor.normalizeUrl(url)
             val cached = pageColorCache.get(normalizedUrl)
@@ -150,14 +139,34 @@ internal class VerveWebViewClient(
                 lastColorExtractedUrl = normalizedUrl
                 viewModel.onSnapshotColorReady(tabId, cached.color)
             } else if (lastColorExtractedUrl != normalizedUrl) {
-                // Steps 2-5: Capture snapshot -> extract color -> finish pill gradient -> commit color
                 lastColorExtractedUrl = normalizedUrl
-                scheduleSnapshotColorExtract(220L)
+                scheduleSnapshotColorExtract(60L)
+            }
+        }
+    }
+
+    override fun onPageFinished(view: WebView?, url: String?) {
+        super.onPageFinished(view, url)
+        isMainFrameLoading = false
+        viewModel.onPageLoadFinished(tabId)
+
+        if (!url.isNullOrBlank() && url != "about:blank" && !isShowingErrorPage) {
+            edgeProbeScheduler.scheduleDebounced(120L)
+            edgeProbeScheduler.attachDomMutationObserver()
+            scheduleThumbnailCapture(280L)
+
+            val normalizedUrl = WebSnapshotColorExtractor.normalizeUrl(url)
+            val cached = pageColorCache.get(normalizedUrl)
+            if (cached != null && lastColorExtractedUrl != normalizedUrl) {
+                lastColorExtractedUrl = normalizedUrl
+                viewModel.onSnapshotColorReady(tabId, cached.color)
             } else {
-                viewModel.onSnapshotColorReady(tabId, null)
+                lastColorExtractedUrl = normalizedUrl
+                scheduleSnapshotColorExtract(60L)
+                // Silent follow-up pass for pages whose hero images/CSS hydrate shortly after load
+                scheduleSilentSnapshotColorExtract(520L)
             }
         } else {
-            // Ensure any in-flight pill loading animation completes on blank or error pages
             viewModel.onRevealTimeout()
         }
 
@@ -182,12 +191,10 @@ internal class VerveWebViewClient(
                 pageColorCache.remove(newFullUrl)
                 lastColorExtractedUrl = ""
                 if (!isShowingErrorPage && !isMainFrameLoading) {
-                    viewModel.onThemeExtractionStarted(tabId)
                     lastColorExtractedUrl = newFullUrl
-                    scheduleSnapshotColorExtract(220L)
+                    scheduleSilentSnapshotColorExtract(60L)
                 }
             } else if (!isShowingErrorPage && !isMainFrameLoading && previousFullUrl != newFullUrl) {
-                viewModel.onThemeExtractionStarted(tabId)
                 val cached = pageColorCache.get(newFullUrl)
                 if (cached != null) {
                     WebSnapshotColorExtractor.cancel(view)
@@ -195,11 +202,9 @@ internal class VerveWebViewClient(
                     viewModel.onSnapshotColorReady(tabId, cached.color)
                 } else if (lastColorExtractedUrl != newFullUrl) {
                     lastColorExtractedUrl = newFullUrl
-                    edgeProbeScheduler.scheduleDebounced(200L)
-                    scheduleThumbnailCapture(360L)
-                    scheduleSnapshotColorExtract(380L)
-                } else {
-                    viewModel.onSnapshotColorReady(tabId, null)
+                    edgeProbeScheduler.scheduleDebounced(140L)
+                    scheduleThumbnailCapture(280L)
+                    scheduleSilentSnapshotColorExtract(160L)
                 }
             }
         }
@@ -222,6 +227,7 @@ internal class VerveWebViewClient(
         if (pendingFallbackUrl != null) return
 
         isMainFrameLoading = false
+        viewModel.onPageLoadFinished(tabId)
         WebSnapshotColorExtractor.cancel(view)
         viewModel.onRevealTimeout()
         view?.let {
@@ -257,6 +263,7 @@ internal class VerveWebViewClient(
 
         pendingFallbackUrl = null
         isMainFrameLoading = false
+        viewModel.onPageLoadFinished(tabId)
         WebSnapshotColorExtractor.cancel(view)
         viewModel.onRevealTimeout()
         view?.let {
@@ -272,6 +279,7 @@ internal class VerveWebViewClient(
 
     override fun onRenderProcessGone(view: WebView?, detail: RenderProcessGoneDetail?): Boolean {
         isMainFrameLoading = false
+        viewModel.onPageLoadFinished(tabId)
         WebSnapshotColorExtractor.cancel(view)
         onWebViewDestroyed()
         val deadView = view ?: return true
@@ -424,6 +432,7 @@ internal class VerveWebViewClient(
 
         if (isBlocked) {
             if (webResourceRequest.isForMainFrame) {
+                viewModel.onPageLoadFinished(tabId)
                 viewModel.onRevealTimeout()
                 val blockedHtml = """
                     <!DOCTYPE html>

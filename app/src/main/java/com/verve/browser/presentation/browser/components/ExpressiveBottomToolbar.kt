@@ -57,12 +57,14 @@ fun ExpressiveBottomToolbar(
     isWebMode: Boolean = false,
     isCollapsed: Boolean = false,
     isSearchFocused: Boolean = false,
+    isPageLoading: Boolean = false,
     bottomWindowInsets: WindowInsets = WindowInsets.navigationBars.only(WindowInsetsSides.Bottom),
     onSearchFocusChanged: (Boolean) -> Unit = {},
     onCollapsedChange: (Boolean) -> Unit = {},
     onLeftActionClick: () -> Unit = {},
     onSiteSettingsClick: () -> Unit = {},
-    onRefreshClick: () -> Unit = {}
+    onRefreshClick: () -> Unit = {},
+    onStopLoadingClick: () -> Unit = {}
 ) {
     val density = LocalDensity.current
     val textMeasurer = rememberTextMeasurer()
@@ -197,6 +199,7 @@ fun ExpressiveBottomToolbar(
                 currentUrl = currentUrl,
                 isWebMode = isWebMode,
                 isCollapsed = effectiveCollapsed,
+                isPageLoading = isPageLoading,
                 isThemeLoading = isThemeLoading,
                 expandProgress = expandProgress,
                 onThemeAnimationCompleted = onThemeAnimationCompleted,
@@ -204,6 +207,7 @@ fun ExpressiveBottomToolbar(
                 onExpandClick = { onCollapsedChange(false) },
                 onSiteSettingsClick = onSiteSettingsClick,
                 onRefreshClick = onRefreshClick,
+                onStopLoadingClick = onStopLoadingClick,
                 modifier = Modifier.width(currentPillWidth)
             )
 

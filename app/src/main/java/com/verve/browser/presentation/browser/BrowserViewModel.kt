@@ -56,6 +56,12 @@ class BrowserViewModel(
     fun onPageTitleUpdated(tabId: String, title: String) =
         pageAppearanceController.onPageTitleUpdated(tabId = tabId, title = title)
 
+    fun onPageLoadStarted(tabId: String) =
+        pageAppearanceController.onPageLoadStarted(tabId = tabId)
+
+    fun onPageLoadFinished(tabId: String) =
+        pageAppearanceController.onPageLoadFinished(tabId = tabId)
+
     fun onThemeExtractionStarted(tabId: String) =
         pageAppearanceController.onThemeExtractionStarted(tabId = tabId)
 

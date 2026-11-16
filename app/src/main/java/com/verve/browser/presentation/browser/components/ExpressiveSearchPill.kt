@@ -1,7 +1,10 @@
 package com.verve.browser.presentation.browser.components
 
 import android.net.Uri
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
@@ -12,16 +15,15 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -58,13 +60,15 @@ fun ExpressiveSearchPill(
     currentUrl: String = "",
     isWebMode: Boolean = false,
     isCollapsed: Boolean = false,
+    isPageLoading: Boolean = false,
     isThemeLoading: Boolean = false,
     expandProgress: Float? = null,
     onThemeAnimationCompleted: () -> Unit = {},
     onFocusChanged: (Boolean) -> Unit = {},
     onExpandClick: () -> Unit = {},
     onSiteSettingsClick: () -> Unit = {},
-    onRefreshClick: () -> Unit = {}
+    onRefreshClick: () -> Unit = {},
+    onStopLoadingClick: () -> Unit = {}
 ) {
     val focusManager = LocalFocusManager.current
     val focusRequester = remember { FocusRequester() }
@@ -73,7 +77,27 @@ fun ExpressiveSearchPill(
     var hasGainedFocus by remember(isEditingUrl) { mutableStateOf(false) }
 
     val effectiveCollapsed = isWebMode && isCollapsed && !isEditingUrl
-    val containerColor = MaterialTheme.colorScheme.primaryContainer
+    val isPillLoading = isWebMode && !isEditingUrl && (isPageLoading || isThemeLoading)
+
+    val containerColor by animateColorAsState(
+        targetValue = if (isPillLoading) {
+            MaterialTheme.colorScheme.primary
+        } else {
+            MaterialTheme.colorScheme.primaryContainer
+        },
+        animationSpec = tween(durationMillis = 300, easing = FastOutSlowInEasing),
+        label = "pillContainerColor"
+    )
+
+    val contentColor by animateColorAsState(
+        targetValue = if (isPillLoading) {
+            MaterialTheme.colorScheme.onPrimary
+        } else {
+            MaterialTheme.colorScheme.onPrimaryContainer
+        },
+        animationSpec = tween(durationMillis = 300, easing = FastOutSlowInEasing),
+        label = "pillContentColor"
+    )
 
     val internalExpandProgress by animateFloatAsState(
         targetValue = if (effectiveCollapsed) 0f else 1f,
@@ -100,156 +124,155 @@ fun ExpressiveSearchPill(
         }
     }
 
-    Surface(
+    Box(
         modifier = modifier
-            .DropShadow(fillColor = containerColor)
-            .height(pillHeight),
-        shape = CircleShape,
-        color = containerColor,
-        shadowElevation = 0.dp
-    ) {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .pillTertiaryLoadingGradient(
-                    isLoading = isThemeLoading,
-                    onAnimationCompleted = onThemeAnimationCompleted
-                )
-        ) {
-            if (isWebMode && !isEditingUrl) {
-                val iconProgress = ((clampedExpand - 0.30f) / 0.70f).coerceIn(0f, 1f)
-                val iconScale = 0.68f + 0.32f * iconProgress
-                val domainHorizontalPadding = lerp(14.dp, 54.dp, clampedExpand)
-
-                Box(modifier = Modifier.fillMaxSize()) {
-                    IconButton(
-                        onClick = onSiteSettingsClick,
-                        enabled = iconProgress > 0.65f,
-                        modifier = Modifier
-                            .align(Alignment.CenterStart)
-                            .padding(start = 8.dp)
-                            .graphicsLayer {
-                                alpha = iconProgress
-                                scaleX = iconScale
-                                scaleY = iconScale
-                                translationX = -iconSlidePx * (1f - iconProgress)
-                            }
-                    ) {
-                        Icon(
-                            painter = painterResource(id = R.drawable.ic_siteinfo),
-                            contentDescription = "Site Settings",
-                            tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                            modifier = Modifier.size(18.dp)
-                        )
-                    }
-
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .clickable(
-                                interactionSource = remember { MutableInteractionSource() },
-                                indication = null
-                            ) {
-                                if (clampedExpand < 0.5f) {
-                                    onExpandClick()
-                                } else {
-                                    onInputTextChange(currentUrl)
-                                    isEditingUrl = true
-                                }
-                            }
-                            .padding(horizontal = domainHorizontalPadding),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = extractDisplayDomain(currentUrl),
-                            style = MaterialTheme.typography.titleMedium.copy(
-                                color = MaterialTheme.colorScheme.onPrimaryContainer,
-                                fontSize = lerp(12.sp, 16.sp, clampedExpand),
-                                fontWeight = FontWeight.Medium,
-                                textAlign = TextAlign.Center
-                            ),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
-
-                    IconButton(
-                        onClick = onRefreshClick,
-                        enabled = iconProgress > 0.65f,
-                        modifier = Modifier
-                            .align(Alignment.CenterEnd)
-                            .padding(end = 8.dp)
-                            .graphicsLayer {
-                                alpha = iconProgress
-                                scaleX = iconScale
-                                scaleY = iconScale
-                                translationX = iconSlidePx * (1f - iconProgress)
-                            }
-                    ) {
-                        Icon(
-                            imageVector = Icons.Rounded.Refresh,
-                            contentDescription = "Reload Page",
-                            tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                            modifier = Modifier.size(22.dp)
-                        )
-                    }
+            .then(
+                if (!isPillLoading) {
+                    Modifier.DropShadow(fillColor = containerColor)
+                } else {
+                    Modifier
                 }
-            } else {
-                Row(
+            )
+            .height(pillHeight)
+            .pillTertiaryLoadingGradient(
+                isLoading = isPillLoading,
+                onAnimationCompleted = onThemeAnimationCompleted,
+                containerColor = containerColor
+            )
+    ) {
+        if (isWebMode && !isEditingUrl) {
+            val iconProgress = ((clampedExpand - 0.30f) / 0.70f).coerceIn(0f, 1f)
+            val iconScale = 0.68f + 0.32f * iconProgress
+            val domainHorizontalPadding = lerp(14.dp, 54.dp, clampedExpand)
+
+            Box(modifier = Modifier.fillMaxSize()) {
+                IconButton(
+                    onClick = onSiteSettingsClick,
+                    enabled = iconProgress > 0.65f,
                     modifier = Modifier
-                        .fillMaxSize()
-                        .padding(horizontal = 20.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                        .align(Alignment.CenterStart)
+                        .padding(start = 8.dp)
+                        .graphicsLayer {
+                            alpha = iconProgress
+                            scaleX = iconScale
+                            scaleY = iconScale
+                            translationX = -iconSlidePx * (1f - iconProgress)
+                        }
                 ) {
                     Icon(
-                        painter = painterResource(id = R.drawable.ic_search),
-                        contentDescription = "Search",
-                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                        painter = painterResource(id = R.drawable.ic_siteinfo),
+                        contentDescription = "Site Settings",
+                        tint = contentColor,
                         modifier = Modifier.size(18.dp)
                     )
+                }
 
-                    Spacer(modifier = Modifier.width(12.dp))
-
-                    BasicTextField(
-                        value = inputText,
-                        onValueChange = onInputTextChange,
-                        modifier = Modifier
-                            .weight(1f)
-                            .focusRequester(focusRequester)
-                            .onFocusChanged { state ->
-                                onFocusChanged(state.isFocused)
-                                if (state.isFocused) {
-                                    hasGainedFocus = true
-                                } else if (hasGainedFocus && isWebMode) {
-                                    isEditingUrl = false
-                                }
-                            },
-                        singleLine = true,
-                        textStyle = MaterialTheme.typography.titleMedium.copy(
-                            color = MaterialTheme.colorScheme.onPrimaryContainer
-                        ),
-                        cursorBrush = SolidColor(MaterialTheme.colorScheme.onPrimaryContainer),
-                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                        keyboardActions = KeyboardActions(
-                            onSearch = { submitAction() },
-                            onGo = { submitAction() },
-                            onDone = { submitAction() }
-                        ),
-                        decorationBox = { innerTextField ->
-                            Box(contentAlignment = Alignment.CenterStart) {
-                                if (inputText.isEmpty()) {
-                                    Text(
-                                        text = "Search....",
-                                        style = MaterialTheme.typography.titleMedium.copy(
-                                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.6f)
-                                        )
-                                    )
-                                }
-                                innerTextField()
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null
+                        ) {
+                            if (clampedExpand < 0.5f) {
+                                onExpandClick()
+                            } else {
+                                onInputTextChange(currentUrl)
+                                isEditingUrl = true
                             }
                         }
+                        .padding(horizontal = domainHorizontalPadding),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = extractDisplayDomain(currentUrl),
+                        style = MaterialTheme.typography.titleMedium.copy(
+                            color = contentColor,
+                            fontSize = lerp(12.sp, 16.sp, clampedExpand),
+                            fontWeight = FontWeight.Medium,
+                            textAlign = TextAlign.Center
+                        ),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
+
+                IconButton(
+                    onClick = if (isPageLoading) onStopLoadingClick else onRefreshClick,
+                    enabled = iconProgress > 0.65f,
+                    modifier = Modifier
+                        .align(Alignment.CenterEnd)
+                        .padding(end = 8.dp)
+                        .graphicsLayer {
+                            alpha = iconProgress
+                            scaleX = iconScale
+                            scaleY = iconScale
+                            translationX = iconSlidePx * (1f - iconProgress)
+                        }
+                ) {
+                    Icon(
+                        imageVector = if (isPageLoading) Icons.Rounded.Close else Icons.Rounded.Refresh,
+                        contentDescription = if (isPageLoading) "Stop Loading" else "Reload Page",
+                        tint = contentColor,
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
+            }
+        } else {
+            Row(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 20.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    painter = painterResource(id = R.drawable.ic_search),
+                    contentDescription = "Search",
+                    tint = contentColor,
+                    modifier = Modifier.size(18.dp)
+                )
+
+                Spacer(modifier = Modifier.width(12.dp))
+
+                BasicTextField(
+                    value = inputText,
+                    onValueChange = onInputTextChange,
+                    modifier = Modifier
+                        .weight(1f)
+                        .focusRequester(focusRequester)
+                        .onFocusChanged { state ->
+                            onFocusChanged(state.isFocused)
+                            if (state.isFocused) {
+                                hasGainedFocus = true
+                            } else if (hasGainedFocus && isWebMode) {
+                                isEditingUrl = false
+                            }
+                        },
+                    singleLine = true,
+                    textStyle = MaterialTheme.typography.titleMedium.copy(
+                        color = contentColor
+                    ),
+                    cursorBrush = SolidColor(contentColor),
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                    keyboardActions = KeyboardActions(
+                        onSearch = { submitAction() },
+                        onGo = { submitAction() },
+                        onDone = { submitAction() }
+                    ),
+                    decorationBox = { innerTextField ->
+                        Box(contentAlignment = Alignment.CenterStart) {
+                            if (inputText.isEmpty()) {
+                                Text(
+                                    text = "Search....",
+                                    style = MaterialTheme.typography.titleMedium.copy(
+                                        color = contentColor.copy(alpha = 0.6f)
+                                    )
+                                )
+                            }
+                            innerTextField()
+                        }
+                    }
+                )
             }
         }
     }

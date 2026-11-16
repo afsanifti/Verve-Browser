@@ -18,7 +18,6 @@ class TabThumbnailCache(maxEntries: Int = 16) {
     private val revisions = mutableStateMapOf<String, Int>()
 
     fun get(tabId: String): ImageBitmap? {
-        // Read revision so Compose observes thumbnail updates for this tabId
         revisions[tabId]
         return cache.get(tabId)
     }
@@ -75,6 +74,7 @@ class TabWebViewPool(private val maxLiveWebViews: Int = 6) {
     private val liveWebViews = LinkedHashMap<String, WebView>(maxLiveWebViews, 0.75f, true)
     private val savedStates = HashMap<String, Bundle>()
     private val loadedUrls = HashMap<String, String>()
+    private val crashHaltedTabs = HashSet<String>()
     private val poolRevisions = mutableStateMapOf<String, Int>()
 
     fun peekWebView(tabId: String): WebView? {
@@ -85,6 +85,7 @@ class TabWebViewPool(private val maxLiveWebViews: Int = 6) {
     fun getLastRequestedUrl(tabId: String): String = loadedUrls[tabId].orEmpty()
 
     fun setLastRequestedUrl(tabId: String, url: String) {
+        crashHaltedTabs.remove(tabId)
         loadedUrls[tabId] = url
     }
 
@@ -101,9 +102,14 @@ class TabWebViewPool(private val maxLiveWebViews: Int = 6) {
         evictOldestIfNeeded(excludeTabId = tabId)
 
         val created = factory(context)
-        savedStates.remove(tabId)?.let { bundle ->
-            runCatching { created.restoreState(bundle) }
+        val restored = savedStates.remove(tabId)?.let { bundle ->
+            runCatching { created.restoreState(bundle) != null }.getOrDefault(false)
+        } ?: false
+
+        if (!restored && !crashHaltedTabs.contains(tabId)) {
+            loadedUrls.remove(tabId)
         }
+
         liveWebViews[tabId] = created
         return created
     }
@@ -114,8 +120,11 @@ class TabWebViewPool(private val maxLiveWebViews: Int = 6) {
         shouldReload: Boolean
     ) {
         savedStates.remove(tabId)
-        if (!shouldReload) {
+        if (shouldReload) {
+            crashHaltedTabs.remove(tabId)
             loadedUrls.remove(tabId)
+        } else {
+            crashHaltedTabs.add(tabId)
         }
         if (liveWebViews[tabId] === deadWebView) {
             liveWebViews.remove(tabId)
@@ -127,6 +136,7 @@ class TabWebViewPool(private val maxLiveWebViews: Int = 6) {
     fun resetTab(tabId: String) {
         savedStates.remove(tabId)
         loadedUrls.remove(tabId)
+        crashHaltedTabs.remove(tabId)
         poolRevisions.remove(tabId)
         liveWebViews.remove(tabId)?.let { destroyWebViewSafely(it) }
     }
@@ -134,6 +144,7 @@ class TabWebViewPool(private val maxLiveWebViews: Int = 6) {
     fun destroyAll() {
         savedStates.clear()
         loadedUrls.clear()
+        crashHaltedTabs.clear()
         poolRevisions.clear()
         val allViews = liveWebViews.values.toList()
         liveWebViews.clear()

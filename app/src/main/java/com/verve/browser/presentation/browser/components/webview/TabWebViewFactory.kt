@@ -95,6 +95,30 @@ internal fun createTabWebView(
         }
 
         val extractSnapshotColorRunnable = Runnable {
+            if (!canSafelyAccessWebView()) {
+                viewModel.onSnapshotColorReady(tabId, null)
+                return@Runnable
+            }
+            if (isScrollBusy()) {
+                pendingSnapshotColorAfterScroll = true
+                viewModel.onSnapshotColorReady(tabId, null)
+                return@Runnable
+            }
+            val targetUrl = this@apply.url.orEmpty()
+            isColorExtractionInFlight = true
+            WebSnapshotColorExtractor.extractFromWebView(this@apply, delayMs = 0L) { extractedColor ->
+                isColorExtractionInFlight = false
+                if (!isDestroyed) {
+                    val resolvedUrl = targetUrl.ifBlank { this@apply.url.orEmpty() }
+                    if (resolvedUrl.isNotBlank() && extractedColor != null) {
+                        pageColorCache.put(resolvedUrl, extractedColor)
+                    }
+                    viewModel.onSnapshotColorReady(tabId, extractedColor)
+                }
+            }
+        }
+
+        val silentSnapshotColorRunnable = Runnable {
             if (!canSafelyAccessWebView()) return@Runnable
             if (isScrollBusy()) {
                 pendingSnapshotColorAfterScroll = true
@@ -102,10 +126,9 @@ internal fun createTabWebView(
             }
             val targetUrl = this@apply.url.orEmpty()
             isColorExtractionInFlight = true
-            viewModel.onThemeExtractionStarted(tabId)
             WebSnapshotColorExtractor.extractFromWebView(this@apply, delayMs = 0L) { extractedColor ->
                 isColorExtractionInFlight = false
-                if (!isDestroyed) {
+                if (!isDestroyed && extractedColor != null) {
                     val resolvedUrl = targetUrl.ifBlank { this@apply.url.orEmpty() }
                     if (resolvedUrl.isNotBlank()) {
                         pageColorCache.put(resolvedUrl, extractedColor)
@@ -120,13 +143,24 @@ internal fun createTabWebView(
                 mainHandler.removeCallbacks(extractSnapshotColorRunnable)
                 if (isScrollBusy()) {
                     pendingSnapshotColorAfterScroll = true
+                    viewModel.onSnapshotColorReady(tabId, null)
                 } else {
-                    mainHandler.postDelayed(extractSnapshotColorRunnable, delayMs)
+                    mainHandler.postDelayed(extractSnapshotColorRunnable, minOf(delayMs, 60L))
                 }
             }
         }
 
-        // Refresh snapshot when an in-page lightbox/modal opens or swaps images without changing URL
+        val scheduleSilentSnapshotColorExtract: (Long) -> Unit = { delayMs ->
+            if (!isDestroyed) {
+                mainHandler.removeCallbacks(silentSnapshotColorRunnable)
+                if (isScrollBusy()) {
+                    pendingSnapshotColorAfterScroll = true
+                } else {
+                    mainHandler.postDelayed(silentSnapshotColorRunnable, delayMs)
+                }
+            }
+        }
+
         val domMutationSnapshotRunnable = Runnable {
             if (!canSafelyAccessWebView() || isScrollBusy()) return@Runnable
             val now = SystemClock.uptimeMillis()
@@ -137,7 +171,7 @@ internal fun createTabWebView(
             if (currentUrl.isNotBlank()) {
                 pageColorCache.remove(currentUrl)
             }
-            scheduleSnapshotColorExtract(0L)
+            scheduleSilentSnapshotColorExtract(0L)
         }
 
         val onDomVisualMutation: () -> Unit = {
@@ -172,7 +206,7 @@ internal fun createTabWebView(
             }
             if (pendingSnapshotColorAfterScroll) {
                 pendingSnapshotColorAfterScroll = false
-                scheduleSnapshotColorExtract(140L)
+                scheduleSilentSnapshotColorExtract(140L)
             }
         }
 
@@ -184,10 +218,12 @@ internal fun createTabWebView(
         val cancelSnapshotsForScroll: () -> Unit = {
             mainHandler.removeCallbacks(captureThumbnailRunnable)
             mainHandler.removeCallbacks(extractSnapshotColorRunnable)
+            mainHandler.removeCallbacks(silentSnapshotColorRunnable)
             mainHandler.removeCallbacks(domMutationSnapshotRunnable)
             if (isColorExtractionInFlight) {
                 isColorExtractionInFlight = false
                 pendingSnapshotColorAfterScroll = true
+                viewModel.onSnapshotColorReady(tabId, null)
             }
             WebSnapshotColorExtractor.cancel(this@apply)
         }
@@ -289,6 +325,7 @@ internal fun createTabWebView(
             bottomCoordinator = bottomCoordinator,
             scheduleThumbnailCapture = scheduleThumbnailCapture,
             scheduleSnapshotColorExtract = scheduleSnapshotColorExtract,
+            scheduleSilentSnapshotColorExtract = scheduleSilentSnapshotColorExtract,
             onNavigatedUrl = { navigatedUrl ->
                 lastRequestedCollapsed = false
                 accumulatedScrollDy = 0

@@ -60,13 +60,13 @@ internal fun rememberBrowserCurtainMetrics(
 
     val animatedTopColor by animateColorAsState(
         targetValue = targetTopColor,
-        animationSpec = tween(durationMillis = 220, easing = FastOutSlowInEasing),
+        animationSpec = tween(durationMillis = 300, easing = FastOutSlowInEasing),
         label = "adaptiveTopRegionColor"
     )
 
     val animatedBottomColor by animateColorAsState(
         targetValue = targetBottomColor,
-        animationSpec = tween(durationMillis = 110, easing = FastOutSlowInEasing),
+        animationSpec = tween(durationMillis = 300, easing = FastOutSlowInEasing),
         label = "adaptiveBottomRegionColor"
     )
 

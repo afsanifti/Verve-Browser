@@ -12,7 +12,6 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.dp
 import com.verve.browser.presentation.browser.BrowserUiState
 import com.verve.browser.presentation.browser.BrowserViewModel
-import com.verve.browser.presentation.browser.components.PageRevealCurtain
 import com.verve.browser.presentation.browser.components.VerveWebView
 import com.verve.browser.presentation.browser.util.TabThumbnailCache
 import com.verve.browser.presentation.browser.util.TabWebViewPool
@@ -52,11 +51,6 @@ internal fun BrowserWebViewport(
                     .graphicsLayer {
                         translationY = -curtainMetrics.scrollBottomShiftPx.toFloat()
                     }
-            )
-
-            PageRevealCurtain(
-                visible = !uiState.isPageReadyToReveal,
-                progress = uiState.loadingProgress
             )
         }
     }

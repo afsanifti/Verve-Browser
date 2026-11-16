@@ -106,7 +106,7 @@ object WebSnapshotColorExtractor {
 
     fun extractFromWebView(
         webView: WebView?,
-        delayMs: Long = 160L,
+        delayMs: Long = 40L,
         onColorExtracted: (Color?) -> Unit
     ) {
         if (webView == null) {
@@ -123,45 +123,43 @@ object WebSnapshotColorExtractor {
 
         val runnable = Runnable {
             state.pendingRunnable = null
-            if (!isRequestValid(webView, requestGeneration)) return@Runnable
+            if (!isRequestValid(webView, requestGeneration)) {
+                onColorExtracted(null)
+                return@Runnable
+            }
 
-            webView.postVisualStateCallback(
-                requestGeneration,
-                object : WebView.VisualStateCallback() {
-                    override fun onComplete(requestId: Long) {
-                        if (!isRequestValid(webView, requestGeneration)) return
+            val bitmap = captureTopViewportSnapshot(webView)
+            if (bitmap == null) {
+                extractDomFallback(webView, requestGeneration, onColorExtracted)
+                return@Runnable
+            }
 
-                        val bitmap = captureTopViewportSnapshot(webView)
-                        if (bitmap == null) {
-                            extractDomFallback(webView, requestGeneration, onColorExtracted)
-                            return
-                        }
+            state.activeJob = extractionScope.launch {
+                val snapshotColor = try {
+                    if (!isActive) null else extractDominantSeedColor(bitmap)
+                } finally {
+                    bitmap.recycle()
+                }
 
-                        state.activeJob = extractionScope.launch {
-                            val snapshotColor = try {
-                                if (!isActive) null else extractDominantSeedColor(bitmap)
-                            } finally {
-                                bitmap.recycle()
-                            }
+                if (!isActive) return@launch
 
-                            if (!isActive) return@launch
-
-                            withContext(Dispatchers.Main) {
-                                if (!isRequestValid(webView, requestGeneration)) return@withContext
-                                if (snapshotColor != null) {
-                                    onColorExtracted(snapshotColor)
-                                } else {
-                                    extractDomFallback(webView, requestGeneration, onColorExtracted)
-                                }
-                            }
-                        }
+                withContext(Dispatchers.Main) {
+                    if (!isRequestValid(webView, requestGeneration)) return@withContext
+                    if (snapshotColor != null) {
+                        onColorExtracted(snapshotColor)
+                    } else {
+                        extractDomFallback(webView, requestGeneration, onColorExtracted)
                     }
                 }
-            )
+            }
         }
 
         state.pendingRunnable = runnable
-        mainHandler.postDelayed(runnable, delayMs)
+        if (delayMs <= 0L) {
+            mainHandler.post(runnable)
+        } else {
+            mainHandler.postDelayed(runnable, delayMs)
+        }
     }
 
     private fun isRequestValid(webView: WebView, expectedGeneration: Long): Boolean {
@@ -174,6 +172,7 @@ object WebSnapshotColorExtractor {
     }
 
     private fun captureTopViewportSnapshot(webView: WebView): Bitmap? {
+        if (webView.contentHeight <= 0) return null
         return runCatching {
             val bitmap = Bitmap.createBitmap(SAMPLE_SIZE, SAMPLE_SIZE, Bitmap.Config.ARGB_8888)
             val canvas = Canvas(bitmap)
@@ -246,7 +245,6 @@ object WebSnapshotColorExtractor {
 
             matchedPixelCount++
 
-            // Favor the main hero / expanded media area (rows 12%..82%) over small fixed top-bar buttons
             val rowRatio = (index / SAMPLE_SIZE).toFloat() / SAMPLE_SIZE.toFloat()
             val regionWeight = when {
                 rowRatio < 0.12f -> 0.80f
@@ -306,7 +304,10 @@ object WebSnapshotColorExtractor {
         expectedGeneration: Long,
         onColorExtracted: (Color?) -> Unit
     ) {
-        if (!isRequestValid(webView, expectedGeneration)) return
+        if (!isRequestValid(webView, expectedGeneration)) {
+            onColorExtracted(null)
+            return
+        }
         webView.evaluateJavascript(DOM_COLOR_FALLBACK_SCRIPT) { raw ->
             if (!isRequestValid(webView, expectedGeneration)) return@evaluateJavascript
             val clean = raw?.trim()?.removeSurrounding("\"")?.removeSurrounding("'")

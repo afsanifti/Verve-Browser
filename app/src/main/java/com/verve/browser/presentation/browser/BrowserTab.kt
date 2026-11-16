@@ -9,6 +9,7 @@ data class BrowserTab(
     val siteSeedColor: Color? = null,
     val topRegionColor: Color? = null,
     val bottomRegionColor: Color? = null,
+    val isMainFrameLoading: Boolean = false,
     val isLoading: Boolean = false,
     val loadingProgress: Int = 0,
     val canGoBack: Boolean = false,

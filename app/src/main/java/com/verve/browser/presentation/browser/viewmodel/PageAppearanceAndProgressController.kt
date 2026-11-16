@@ -39,12 +39,66 @@ internal class PageAppearanceAndProgressController(
         }
     }
 
-    fun onThemeExtractionStarted(tabId: String) {
+    fun onPageLoadStarted(tabId: String) {
         uiState.update { state ->
+            val updatedTabs = state.tabs.map { tab ->
+                if (tab.id == tabId) {
+                    tab.copy(
+                        isMainFrameLoading = true,
+                        isLoading = true,
+                        loadingProgress = 0
+                    )
+                } else {
+                    tab
+                }
+            }
             if (tabId == state.activeTabId) {
                 state.copy(
+                    tabs = updatedTabs,
+                    isLoading = true,
+                    loadingProgress = 0,
                     isThemeExtracting = true,
-                    pendingSiteSeedColor = state.pendingSiteSeedColor ?: state.siteSeedColor
+                    pendingSiteSeedColor = null
+                )
+            } else {
+                state.copy(tabs = updatedTabs)
+            }
+        }
+    }
+
+    fun onPageLoadFinished(tabId: String) {
+        uiState.update { state ->
+            val updatedTabs = state.tabs.map { tab ->
+                if (tab.id == tabId) {
+                    tab.copy(
+                        isMainFrameLoading = false,
+                        isLoading = false,
+                        loadingProgress = 100
+                    )
+                } else {
+                    tab
+                }
+            }
+            if (tabId == state.activeTabId) {
+                state.copy(
+                    tabs = updatedTabs,
+                    isLoading = false,
+                    loadingProgress = 100,
+                    isPageReadyToReveal = true
+                )
+            } else {
+                state.copy(tabs = updatedTabs)
+            }
+        }
+    }
+
+    fun onThemeExtractionStarted(tabId: String) {
+        uiState.update { state ->
+            val targetTab = state.tabs.firstOrNull { it.id == tabId }
+            if (tabId == state.activeTabId && targetTab?.isMainFrameLoading == true) {
+                state.copy(
+                    isThemeExtracting = true,
+                    pendingSiteSeedColor = null
                 )
             } else {
                 state
@@ -56,29 +110,20 @@ internal class PageAppearanceAndProgressController(
         uiState.update { state ->
             val updatedTabs = state.tabs.map { tab ->
                 if (tab.id == tabId) {
-                    tab.copy(siteSeedColor = color ?: tab.siteSeedColor)
+                    tab.copy(siteSeedColor = color ?: if (state.isThemeExtracting) null else tab.siteSeedColor)
                 } else {
                     tab
                 }
             }
             if (tabId == state.activeTabId) {
-                val resolvedColor = color ?: state.pendingSiteSeedColor ?: state.siteSeedColor
-                if (state.isThemeExtracting) {
-                    // Hold siteSeedColor until the pill gradient animation finishes
-                    state.copy(
-                        tabs = updatedTabs,
-                        pendingSiteSeedColor = resolvedColor,
-                        isThemeExtracting = false,
-                        isPageReadyToReveal = true
-                    )
-                } else {
-                    state.copy(
-                        tabs = updatedTabs,
-                        siteSeedColor = resolvedColor,
-                        pendingSiteSeedColor = resolvedColor,
-                        isPageReadyToReveal = true
-                    )
-                }
+                val resolvedColor = color ?: if (state.isThemeExtracting) null else state.siteSeedColor
+                state.copy(
+                    tabs = updatedTabs,
+                    siteSeedColor = resolvedColor,
+                    pendingSiteSeedColor = resolvedColor,
+                    isThemeExtracting = false,
+                    isPageReadyToReveal = true
+                )
             } else {
                 state.copy(tabs = updatedTabs)
             }
@@ -159,7 +204,13 @@ internal class PageAppearanceAndProgressController(
 
     fun onProgressChanged(tabId: String, progress: Int) {
         uiState.update { state ->
-            val isLoading = progress in 1..99
+            val targetTab = state.tabs.firstOrNull { it.id == tabId } ?: return@update state
+            // Ignore post-load subresource/iframe progress updates so the pill never re-enters loading
+            if (!targetTab.isMainFrameLoading && progress < 100) {
+                return@update state
+            }
+
+            val isLoading = targetTab.isMainFrameLoading && progress in 0..99
             val updatedTabs = state.tabs.map { tab ->
                 if (tab.id == tabId) {
                     tab.copy(isLoading = isLoading, loadingProgress = progress)

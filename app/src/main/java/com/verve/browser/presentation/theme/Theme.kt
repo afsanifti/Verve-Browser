@@ -6,11 +6,14 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.movableContentOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import com.materialkolor.PaletteStyle
 import com.materialkolor.material3.DynamicMaterialExpressiveTheme
-import com.verve.browser.presentation.theme.AppTypography
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
@@ -19,16 +22,23 @@ fun VerveBrowserTheme(
     isDark: Boolean = isSystemInDarkTheme(),
     content: @Composable () -> Unit
 ) {
+    val latestContent by rememberUpdatedState(content)
+    val preservedContent = remember {
+        movableContentOf {
+            latestContent()
+        }
+    }
+
     if (siteSeedColor != null) {
         WebsiteSnapshotThemeEngine(
             seedColor = siteSeedColor,
             isDark = isDark,
-            content = content
+            content = preservedContent
         )
     } else {
         WallpaperThemeEngine(
             isDark = isDark,
-            content = content
+            content = preservedContent
         )
     }
 }
@@ -48,6 +58,7 @@ private fun WebsiteSnapshotThemeEngine(
         content = content
     )
 }
+
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun WallpaperThemeEngine(

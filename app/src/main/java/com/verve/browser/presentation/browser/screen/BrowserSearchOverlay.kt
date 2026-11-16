@@ -2,25 +2,19 @@ package com.verve.browser.presentation.browser.screen
 
 import android.webkit.WebView
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.union
-import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
@@ -36,89 +30,97 @@ import com.verve.browser.presentation.browser.util.TabThumbnailCache
 import com.verve.browser.presentation.browser.util.TabWebViewPool
 
 @Composable
-internal fun BoxScope.BrowserSearchOverlay(
+internal fun BrowserSearchOverlay(
     uiState: BrowserUiState,
     isOnWebPage: Boolean,
     bottomNavInsets: WindowInsets,
     webViewRef: WebView?,
     tabWebViewPool: TabWebViewPool,
     thumbnailCache: TabThumbnailCache,
-    viewModel: BrowserViewModel
+    viewModel: BrowserViewModel,
+    modifier: Modifier = Modifier
 ) {
     val focusManager = LocalFocusManager.current
 
-    // Focused Search Overlay Backdrop
-    AnimatedVisibility(
-        visible = uiState.isSearchFocused,
-        enter = fadeIn(tween(180)),
-        exit = fadeOut(tween(150)),
-        modifier = Modifier.fillMaxSize()
-    ) {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(MaterialTheme.colorScheme.surfaceContainerLow)
-                .clickable(
-                    interactionSource = remember { MutableInteractionSource() },
-                    indication = null
-                ) {
-                    focusManager.clearFocus()
-                    viewModel.onSearchFocusChanged(false)
-                }
-        )
-    }
-
-    // Native Floating Material You Search Bar & Suggestions Overlay
-    Column(
-        modifier = Modifier
-            .align(Alignment.BottomCenter)
-            .fillMaxWidth()
-            .windowInsetsPadding(bottomNavInsets.union(WindowInsets.ime)),
-        verticalArrangement = Arrangement.Bottom
-    ) {
+    Box(modifier = modifier.fillMaxSize()) {
+        // Dim scrim behind search suggestions when focused
         AnimatedVisibility(
-            visible = uiState.isSearchFocused && uiState.searchSuggestions.isNotEmpty(),
-            enter = fadeIn(tween(180)) + slideInVertically(tween(200)) { it / 6 },
-            exit = fadeOut(tween(120)) + slideOutVertically(tween(150)) { it / 6 }
+            visible = uiState.isSearchFocused,
+            enter = fadeIn(),
+            exit = fadeOut(),
+            modifier = Modifier.fillMaxSize()
         ) {
-            SearchSuggestionsList(
-                suggestions = uiState.searchSuggestions,
-                onSuggestionClick = { suggestion ->
-                    viewModel.onUrlSubmitted(suggestion)
-                    focusManager.clearFocus()
-                },
-                onSuggestionFill = { suggestion ->
-                    viewModel.onSearchInputChanged(suggestion)
-                },
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.42f))
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null
+                    ) {
+                        focusManager.clearFocus()
+                        viewModel.onSearchFocusChanged(false)
+                    }
             )
         }
 
-        ExpressiveBottomToolbar(
-            inputText = uiState.searchInput,
-            onInputTextChange = viewModel::onSearchInputChanged,
-            onUrlSubmitted = viewModel::onUrlSubmitted,
-            onTabSwitcherClick = {
-                val activeId = uiState.activeTabId
-                val activeView = tabWebViewPool.peekWebView(activeId) ?: webViewRef
-                thumbnailCache.captureFromWebView(activeId, activeView)
-                viewModel.openTabSwitcher()
-            },
-            isThemeLoading = uiState.isThemeExtracting,
-            onThemeAnimationCompleted = viewModel::onThemeGradientAnimationCompleted,
-            currentUrl = uiState.currentUrl,
-            isWebMode = isOnWebPage,
-            isCollapsed = uiState.isToolbarCollapsed,
-            isSearchFocused = uiState.isSearchFocused,
-            bottomWindowInsets = WindowInsets(0, 0, 0, 0),
-            onSearchFocusChanged = viewModel::onSearchFocusChanged,
-            onCollapsedChange = { collapsed ->
-                viewModel.setToolbarCollapsed(collapsed = collapsed, isManual = true)
-            },
-            onLeftActionClick = { /* open page menu sheet */ },
-            onSiteSettingsClick = { /* open site settings / adblock info */ },
-            onRefreshClick = { webViewRef?.reload() },
-            modifier = Modifier.fillMaxWidth()
-        )
+        // Suggestions list + floating bottom pill toolbar
+        Column(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .imePadding(),
+            verticalArrangement = Arrangement.Bottom
+        ) {
+            AnimatedVisibility(
+                visible = uiState.isSearchFocused && uiState.searchSuggestions.isNotEmpty(),
+                enter = fadeIn(),
+                exit = fadeOut()
+            ) {
+                SearchSuggestionsList(
+                    suggestions = uiState.searchSuggestions,
+                    onSuggestionClick = { suggestion ->
+                        focusManager.clearFocus()
+                        viewModel.onUrlSubmitted(suggestion)
+                    },
+                    onSuggestionFill = { suggestion ->
+                        viewModel.onSearchInputChanged(suggestion)
+                    },
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)
+                )
+            }
+
+            ExpressiveBottomToolbar(
+                inputText = uiState.searchInput,
+                onInputTextChange = viewModel::onSearchInputChanged,
+                onUrlSubmitted = viewModel::onUrlSubmitted,
+                onTabSwitcherClick = {
+                    webViewRef?.let { activeView ->
+                        thumbnailCache.captureFromWebView(uiState.activeTabId, activeView)
+                    }
+                    viewModel.openTabSwitcher()
+                },
+                isThemeLoading = uiState.isThemeExtracting,
+                onThemeAnimationCompleted = viewModel::onThemeGradientAnimationCompleted,
+                currentUrl = uiState.currentUrl,
+                isWebMode = isOnWebPage,
+                isCollapsed = uiState.isToolbarCollapsed,
+                isSearchFocused = uiState.isSearchFocused,
+                isPageLoading = uiState.isLoading,
+                bottomWindowInsets = bottomNavInsets,
+                onSearchFocusChanged = viewModel::onSearchFocusChanged,
+                onCollapsedChange = { collapsed ->
+                    viewModel.setToolbarCollapsed(collapsed = collapsed, isManual = true)
+                },
+                onRefreshClick = {
+                    webViewRef?.reload()
+                },
+                onStopLoadingClick = {
+                    webViewRef?.stopLoading()
+                    viewModel.onPageLoadFinished(uiState.activeTabId)
+                    viewModel.onRevealTimeout()
+                }
+            )
+        }
     }
 }

@@ -64,7 +64,7 @@ fun BrowserScreen(
 
     LaunchedEffect(uiState.activeTabId, uiState.currentUrl) {
         if (uiState.currentUrl.isNotEmpty()) {
-            delay(1500L.milliseconds)
+            delay(2500.milliseconds)
             viewModel.onRevealTimeout()
         }
     }
