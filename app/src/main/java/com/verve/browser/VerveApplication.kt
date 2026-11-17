@@ -6,6 +6,7 @@ import com.verve.browser.data.local.TabSessionStorage
 import com.verve.browser.data.repository.AdBlockRepositoryImpl
 import com.verve.browser.domain.repository.AdBlockRepository
 import com.verve.browser.domain.usecase.ShouldBlockUrlUseCase
+import com.verve.browser.presentation.theme.ThemePreferences
 
 class VerveApplication : Application() {
 
@@ -20,6 +21,7 @@ class VerveApplication : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        ThemePreferences.init(this)
 
         tabSessionStorage = TabSessionStorage(this)
 

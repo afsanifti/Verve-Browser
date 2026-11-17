@@ -1,6 +1,10 @@
 package com.verve.browser.presentation.browser
 
+import android.Manifest
+import android.os.Build
 import android.webkit.WebView
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -17,6 +21,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.verve.browser.data.update.UpdateNotificationHelper
 import com.verve.browser.presentation.browser.components.QuickTabsScreen
 import com.verve.browser.presentation.browser.screen.BrowserBackHandler
 import com.verve.browser.presentation.browser.screen.BrowserBottomProgressiveCurtain
@@ -38,6 +46,8 @@ import kotlin.time.Duration.Companion.milliseconds
 @Composable
 fun BrowserScreen(
     viewModel: BrowserViewModel,
+    openUpdateSheetRequested: Boolean = false,
+    onUpdateSheetRequestHandled: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val uiState: BrowserUiState by viewModel.uiState.collectAsState()
@@ -54,19 +64,60 @@ fun BrowserScreen(
     }
 
     val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
     val scope = rememberCoroutineScope()
     val updateController = remember { AppUpdateController(context, scope) }
     val updateState by updateController.uiState.collectAsState()
 
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) {
+            updateState.availableUpdate?.let { manifest ->
+                UpdateNotificationHelper.showUpdateAvailableNotification(
+                    context = context,
+                    manifest = manifest
+                )
+            }
+        }
+    }
+
+    // Request notification permission on Android 13+ when opening the app
     LaunchedEffect(Unit) {
-        updateController.checkForUpdatesIfDue()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            !UpdateNotificationHelper.hasNotificationPermission(context)
+        ) {
+            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
+    }
+
+    // Auto-check for updates every time the app opens or returns to foreground
+    DisposableEffect(lifecycleOwner, updateController) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_START) {
+                updateController.checkForUpdatesOnAppOpen()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
+
+    // Open modal sheet immediately when user taps the system update notification
+    LaunchedEffect(openUpdateSheetRequested) {
+        if (openUpdateSheetRequested) {
+            isSettingsOpen = false
+            updateController.openModalSheet()
+            onUpdateSheetRequestHandled()
+        }
     }
 
     if (!isSettingsOpen) {
         AppUpdateSheet(
             state = updateState,
             onUpdateClick = updateController::startDownloadAndInstall,
-            onDismiss = { updateController.dismissSheet(snoozeVersion = true) }
+            onDismiss = { updateController.dismissSheet() }
         )
     }
 

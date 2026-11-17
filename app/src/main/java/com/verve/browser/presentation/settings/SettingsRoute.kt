@@ -17,6 +17,7 @@ import com.verve.browser.presentation.update.AppUpdateController
 
 private enum class SettingsDestination {
     MAIN,
+    THEME,
     ABOUT_VERVE
 }
 
@@ -29,7 +30,7 @@ fun SettingsFlow(
     val updateState by updateController.uiState.collectAsState()
 
     BackHandler {
-        if (destination == SettingsDestination.ABOUT_VERVE) {
+        if (destination != SettingsDestination.MAIN) {
             destination = SettingsDestination.MAIN
         } else {
             onExitSettings()
@@ -39,7 +40,7 @@ fun SettingsFlow(
     AnimatedContent(
         targetState = destination,
         transitionSpec = {
-            if (targetState == SettingsDestination.ABOUT_VERVE) {
+            if (targetState != SettingsDestination.MAIN) {
                 (slideInHorizontally { it / 3 } + fadeIn()) togetherWith
                         (slideOutHorizontally { -it / 3 } + fadeOut())
             } else {
@@ -54,7 +55,13 @@ fun SettingsFlow(
                 SettingsScreen(
                     hasUpdateAvailable = updateState.availableUpdate != null,
                     onNavigateBack = onExitSettings,
+                    onOpenTheme = { destination = SettingsDestination.THEME },
                     onOpenAboutVerve = { destination = SettingsDestination.ABOUT_VERVE }
+                )
+            }
+            SettingsDestination.THEME -> {
+                ThemeSettingsScreen(
+                    onNavigateBack = { destination = SettingsDestination.MAIN }
                 )
             }
             SettingsDestination.ABOUT_VERVE -> {

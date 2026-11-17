@@ -5,9 +5,11 @@ import androidx.compose.runtime.Stable
 import com.verve.browser.BuildConfig
 import com.verve.browser.data.update.ApkInstaller
 import com.verve.browser.data.update.GitHubReleaseUpdateRepository
+import com.verve.browser.data.update.UpdateNotificationHelper
 import com.verve.browser.domain.model.AppUpdateManifest
 import java.io.File
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -44,32 +46,82 @@ class AppUpdateController(
 
     private var downloadJob: Job? = null
 
-    fun checkForUpdatesIfDue(minIntervalMs: Long = 6L * 60L * 60L * 1000L) {
-        val now = System.currentTimeMillis()
-        val lastChecked = prefs.getLong(KEY_LAST_CHECK_MS, 0L)
-        if (now - lastChecked < minIntervalMs) return
-        checkForUpdates(userInitiated = false)
+    init {
+        cleanupCompletedOrStaleUpdates()
     }
 
-    fun checkForUpdates(userInitiated: Boolean = true) {
+    fun cleanupCompletedOrStaleUpdates() {
+        scope.launch(Dispatchers.IO) {
+            val pendingVersionCode = prefs.getInt(KEY_PENDING_INSTALL_VERSION_CODE, -1)
+            val isInstalledOrOutdated =
+                pendingVersionCode <= 0 || BuildConfig.VERSION_CODE >= pendingVersionCode
+
+            if (isInstalledOrOutdated) {
+                deleteUpdatesDirectory()
+                prefs.edit().remove(KEY_PENDING_INSTALL_VERSION_CODE).apply()
+                UpdateNotificationHelper.cancelUpdateNotification(appContext)
+            } else {
+                updatesDir.listFiles()?.forEach { file ->
+                    if (file.name.endsWith(".part")) {
+                        file.delete()
+                    }
+                }
+            }
+        }
+    }
+
+    private fun deleteUpdatesDirectory() {
+        if (updatesDir.exists()) {
+            updatesDir.listFiles()?.forEach { it.delete() }
+            updatesDir.delete()
+        }
+    }
+
+    /**
+     * Checks GitHub Releases whenever the app is opened and opens the modal sheet
+     * automatically if a newer version is available.
+     */
+    fun checkForUpdatesOnAppOpen() {
+        checkForUpdates(userInitiated = false, showModalIfFound = true)
+    }
+
+    fun openModalSheet() {
+        if (_uiState.value.availableUpdate != null) {
+            _uiState.update { it.copy(isSheetVisible = true) }
+        } else {
+            checkForUpdates(userInitiated = true, showModalIfFound = true)
+        }
+    }
+
+    fun checkForUpdates(
+        userInitiated: Boolean = true,
+        showModalIfFound: Boolean = userInitiated
+    ) {
         if (_uiState.value.isChecking || _uiState.value.isDownloading) return
 
         scope.launch {
             _uiState.update { it.copy(isChecking = true, errorMessage = null) }
 
             val result = repository.fetchAvailableUpdate()
-            prefs.edit().putLong(KEY_LAST_CHECK_MS, System.currentTimeMillis()).apply()
 
             result.fold(
                 onSuccess = { manifest ->
-                    val snoozedCode = prefs.getInt(KEY_SNOOZED_VERSION_CODE, -1)
-                    val shouldShow = manifest != null &&
-                            (userInitiated || manifest.versionCode != snoozedCode)
+                    if (manifest == null) {
+                        deleteUpdatesDirectory()
+                        prefs.edit().remove(KEY_PENDING_INSTALL_VERSION_CODE).apply()
+                        UpdateNotificationHelper.cancelUpdateNotification(appContext)
+                    } else {
+                        UpdateNotificationHelper.showUpdateAvailableNotification(
+                            context = appContext,
+                            manifest = manifest
+                        )
+                    }
+
                     _uiState.update {
                         it.copy(
                             isChecking = false,
                             availableUpdate = manifest,
-                            isSheetVisible = shouldShow,
+                            isSheetVisible = manifest != null && showModalIfFound,
                             readyApkFile = null
                         )
                     }
@@ -94,7 +146,7 @@ class AppUpdateController(
         val manifest = _uiState.value.availableUpdate ?: return
         val existingReady = _uiState.value.readyApkFile
         if (existingReady != null && existingReady.exists()) {
-            ApkInstaller.installApk(appContext, existingReady)
+            launchInstallerSafely(existingReady, manifest.versionCode)
             return
         }
         if (_uiState.value.isDownloading) return
@@ -130,6 +182,10 @@ class AppUpdateController(
 
             result.fold(
                 onSuccess = { apkFile ->
+                    prefs.edit()
+                        .putInt(KEY_PENDING_INSTALL_VERSION_CODE, manifest.versionCode)
+                        .apply()
+
                     _uiState.update {
                         it.copy(
                             isDownloading = false,
@@ -137,12 +193,16 @@ class AppUpdateController(
                             readyApkFile = apkFile
                         )
                     }
-                    ApkInstaller.installApk(appContext, apkFile)
+
+                    launchInstallerSafely(apkFile, manifest.versionCode)
                 },
                 onFailure = { error ->
+                    deleteUpdatesDirectory()
                     _uiState.update {
                         it.copy(
                             isDownloading = false,
+                            downloadProgress = 0f,
+                            readyApkFile = null,
                             errorMessage = error.message ?: "Update download failed"
                         )
                     }
@@ -151,35 +211,40 @@ class AppUpdateController(
         }
     }
 
-    fun dismissSheet(snoozeVersion: Boolean = false) {
-        downloadJob?.cancel()
-        downloadJob = null
-        val versionCode = _uiState.value.availableUpdate?.versionCode
-        if (snoozeVersion && versionCode != null) {
-            prefs.edit().putInt(KEY_SNOOZED_VERSION_CODE, versionCode).apply()
+    private fun launchInstallerSafely(apkFile: File, targetVersionCode: Int) {
+        prefs.edit().putInt(KEY_PENDING_INSTALL_VERSION_CODE, targetVersionCode).apply()
+        ApkInstaller.installApk(appContext, apkFile).onFailure { error ->
+            _uiState.update {
+                it.copy(
+                    errorMessage = error.message ?: "Could not launch package installer"
+                )
+            }
         }
-        _uiState.update {
-            it.copy(
-                isSheetVisible = false,
-                isDownloading = false
-            )
-        }
-    }
-
-    companion object {
-        private const val KEY_LAST_CHECK_MS = "last_check_ms"
-        private const val KEY_SNOOZED_VERSION_CODE = "snoozed_version_code"
     }
 
     fun cancelDownload() {
         downloadJob?.cancel()
         downloadJob = null
+        deleteUpdatesDirectory()
+        prefs.edit().remove(KEY_PENDING_INSTALL_VERSION_CODE).apply()
         _uiState.update {
             it.copy(
                 isDownloading = false,
-                downloadProgress = 0f
+                downloadProgress = 0f,
+                downloadedBytes = 0L,
+                readyApkFile = null
             )
         }
     }
-}
 
+    fun dismissSheet() {
+        cancelDownload()
+        _uiState.update {
+            it.copy(isSheetVisible = false)
+        }
+    }
+
+    companion object {
+        private const val KEY_PENDING_INSTALL_VERSION_CODE = "pending_install_version_code"
+    }
+}

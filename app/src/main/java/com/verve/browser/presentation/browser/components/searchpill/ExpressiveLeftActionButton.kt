@@ -1,4 +1,4 @@
-package com.verve.browser.presentation.browser.components
+package com.verve.browser.presentation.browser.components.searchpill
 
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.FastOutSlowInEasing

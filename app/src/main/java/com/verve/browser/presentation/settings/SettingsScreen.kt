@@ -29,15 +29,19 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.verve.browser.presentation.theme.rememberThemeConfig
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
     hasUpdateAvailable: Boolean,
     onNavigateBack: () -> Unit,
+    onOpenTheme: () -> Unit,
     onOpenAboutVerve: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val themeConfig = rememberThemeConfig()
+
     Scaffold(
         modifier = modifier.fillMaxSize(),
         containerColor = MaterialTheme.colorScheme.background,
@@ -71,6 +75,7 @@ fun SettingsScreen(
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 16.dp, vertical = 8.dp)
         ) {
+            // Profile Section
             SettingsSectionLabel(text = "Profile")
             ExpressiveSegmentedGroup(
                 items = listOf(
@@ -99,6 +104,7 @@ fun SettingsScreen(
 
             Spacer(modifier = Modifier.height(22.dp))
 
+            // Browser Section
             SettingsSectionLabel(text = "Browser")
             ExpressiveSegmentedGroup(
                 items = listOf(
@@ -114,12 +120,14 @@ fun SettingsScreen(
 
             Spacer(modifier = Modifier.height(22.dp))
 
+            // General Section
             SettingsSectionLabel(text = "General")
             ExpressiveSegmentedGroup(
                 items = listOf(
                     ExpressiveMenuItem(
                         title = "Theme",
-                        subtitle = "System default"
+                        subtitle = themeConfig.summaryLabel(),
+                        onClick = onOpenTheme
                     ),
                     ExpressiveMenuItem(
                         title = "Downloads"

@@ -1,4 +1,4 @@
-package com.verve.browser.presentation.browser.components
+package com.verve.browser.presentation.browser.components.searchpill
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column

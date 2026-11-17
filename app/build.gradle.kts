@@ -70,6 +70,7 @@ dependencies {
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
+    implementation("androidx.work:work-runtime-ktx:2.12.0")
 
     implementation(libs.materialKolor.material3)
     implementation(libs.compose.material3)
@@ -77,8 +78,8 @@ dependencies {
 
     testImplementation("io.mockk:mockk:1.13.12")
     testImplementation("com.google.truth:truth:1.4.2")
-    testImplementation("app.cash.turbine:turbine:1.1.0")
-    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.9.0")
+    testImplementation("app.cash.turbine:turbine:1.2.1")
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.11.0")
 
     testImplementation(libs.junit)
     androidTestImplementation(platform(libs.androidx.compose.bom))

@@ -1,4 +1,4 @@
-package com.verve.browser.presentation.browser.components
+package com.verve.browser.presentation.browser.components.searchpill
 
 import android.net.Uri
 import androidx.compose.animation.AnimatedVisibility
@@ -63,6 +63,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.lerp
 import androidx.compose.ui.unit.sp
 import com.verve.browser.R
+import com.verve.browser.presentation.browser.components.pillTertiaryLoadingGradient
 import com.verve.browser.presentation.browser.util.DropShadow
 import kotlin.math.sin
 import kotlinx.coroutines.delay

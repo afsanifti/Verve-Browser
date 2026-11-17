@@ -24,8 +24,8 @@ import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.unit.dp
 import com.verve.browser.presentation.browser.BrowserUiState
 import com.verve.browser.presentation.browser.BrowserViewModel
-import com.verve.browser.presentation.browser.components.ExpressiveBottomToolbar
-import com.verve.browser.presentation.browser.components.SearchSuggestionsList
+import com.verve.browser.presentation.browser.components.searchpill.ExpressiveBottomToolbar
+import com.verve.browser.presentation.browser.components.searchpill.SearchSuggestionsList
 import com.verve.browser.presentation.browser.util.TabThumbnailCache
 import com.verve.browser.presentation.browser.util.TabWebViewPool
 
