@@ -6,6 +6,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
+import androidx.core.content.edit
 import com.materialkolor.PaletteStyle
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -60,6 +61,11 @@ enum class AppThemeStyle(
         title = "Rainbow",
         subtitle = "Wide chromatic hue separation",
         paletteStyle = PaletteStyle.Rainbow
+    ),
+    CMF(
+        title = "CMF",
+        subtitle = "Cmf. The 2026 color, material finish",
+        paletteStyle = PaletteStyle.Cmf()
     )
 }
 
@@ -134,9 +140,9 @@ object ThemePreferences {
         val updated = current.copy(style = style)
         context.applicationContext
             .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            .edit()
-            .putString(KEY_THEME_STYLE, style.name)
-            .commit()
+            .edit {
+                putString(KEY_THEME_STYLE, style.name)
+            }
         _config.value = updated
     }
 
@@ -146,9 +152,9 @@ object ThemePreferences {
         val updated = current.copy(darkMode = darkMode)
         context.applicationContext
             .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            .edit()
-            .putString(KEY_DARK_MODE, darkMode.name)
-            .commit()
+            .edit {
+                putString(KEY_DARK_MODE, darkMode.name)
+            }
         _config.value = updated
     }
 }

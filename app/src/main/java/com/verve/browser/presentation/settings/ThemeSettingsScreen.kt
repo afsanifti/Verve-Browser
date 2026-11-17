@@ -2,6 +2,8 @@ package com.verve.browser.presentation.settings
 
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.calculateEndPadding
+import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -21,6 +23,7 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.verve.browser.presentation.theme.AppDarkMode
@@ -35,6 +38,7 @@ fun ThemeSettingsScreen(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    val layoutDirection = LocalLayoutDirection.current
     val themeConfig = rememberThemeConfig()
 
     Scaffold(
@@ -66,9 +70,14 @@ fun ThemeSettingsScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(innerPadding)
+                .padding(top = innerPadding.calculateTopPadding())
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 16.dp, vertical = 8.dp)
+                .padding(
+                    start = innerPadding.calculateStartPadding(layoutDirection) + 16.dp,
+                    end = innerPadding.calculateEndPadding(layoutDirection) + 16.dp,
+                    top = 8.dp,
+                    bottom = innerPadding.calculateBottomPadding() + 24.dp
+                )
         ) {
             // Segment 1: Light, Dark, or System default
             SettingsSectionLabel(text = "Appearance")
@@ -109,8 +118,6 @@ fun ThemeSettingsScreen(
                     )
                 }
             )
-
-            Spacer(modifier = Modifier.height(24.dp))
         }
     }
 }

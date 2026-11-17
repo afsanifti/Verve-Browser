@@ -5,7 +5,9 @@ import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -15,6 +17,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.verve.browser.R
 import com.verve.browser.presentation.browser.util.DropShadow
@@ -22,7 +25,8 @@ import com.verve.browser.presentation.browser.util.DropShadow
 @Composable
 fun ExpressiveTabButton(
     onClick: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    buttonWidth: Dp = 56.dp
 ) {
     val containerColor by animateColorAsState(
         targetValue = MaterialTheme.colorScheme.tertiaryContainer,
@@ -38,11 +42,12 @@ fun ExpressiveTabButton(
     Surface(
         onClick = onClick,
         modifier = modifier
+            .width(buttonWidth)
+            .height(56.dp)
             .DropShadow(
                 fillColor = containerColor,
                 cornerRadius = 18.dp
-            )
-            .size(56.dp),
+            ),
         shape = RoundedCornerShape(18.dp),
         color = containerColor,
         shadowElevation = 0.dp

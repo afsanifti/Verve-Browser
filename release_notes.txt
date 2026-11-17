@@ -1,0 +1,8 @@
+## New Features
+- **Expressive Bottom Bar Tab Swiping:** Swipe left or right on the bottom search pill to switch between open tabs with smooth Material 3 spring compression on the side buttons.
+- **CMF Theme:** Added a new CMF theme option to customize Verve's appearance.
+- **Redesigned App Update Experience:** Streamlined the update popup sheet and added a persistent What's new section in About Verve that stays visible after updating.
+
+## Improvements & Fixes
+- **Tab Scrolling & Thumbnails:** Updated the tab switcher scrolling mechanics and improved tab thumbnail rendering for smoother motion and cleaner page previews.
+- **Incognito Theme Switching:** Fixed an issue where toggling Incognito mode did not properly update the active theme.

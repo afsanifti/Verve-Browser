@@ -17,6 +17,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -53,8 +54,13 @@ fun BrowserScreen(
     val uiState: BrowserUiState by viewModel.uiState.collectAsState()
     var webViewRef by remember { mutableStateOf<WebView?>(null) }
     var isSettingsOpen by remember { mutableStateOf(false) }
+
+    val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val scope = rememberCoroutineScope()
+
     val tabWebViewPool = remember { TabWebViewPool() }
-    val thumbnailCache = remember { TabThumbnailCache() }
+    val thumbnailCache = remember(context) { TabThumbnailCache(context) }
 
     DisposableEffect(tabWebViewPool, thumbnailCache) {
         onDispose {
@@ -63,9 +69,11 @@ fun BrowserScreen(
         }
     }
 
-    val context = LocalContext.current
-    val lifecycleOwner = LocalLifecycleOwner.current
-    val scope = rememberCoroutineScope()
+    // Remove stale thumbnail files for tabs that were closed in prior sessions
+    LaunchedEffect(Unit) {
+        thumbnailCache.pruneOrphans(uiState.tabs.map { it.id }.toSet())
+    }
+
     val updateController = remember { AppUpdateController(context, scope) }
     val updateState by updateController.uiState.collectAsState()
 
@@ -91,11 +99,36 @@ fun BrowserScreen(
         }
     }
 
-    // Auto-check for updates every time the app opens or returns to foreground
+    val latestWebViewRef by rememberUpdatedState(webViewRef)
+    val latestActiveTabId by rememberUpdatedState(uiState.activeTabId)
+    val latestCurrentUrl by rememberUpdatedState(uiState.currentUrl)
+    val latestIsIncognito by rememberUpdatedState(uiState.isIncognito)
+    val latestIsTabSwitcherOpen by rememberUpdatedState(uiState.isTabSwitcherOpen)
+    val latestIsSettingsOpen by rememberUpdatedState(isSettingsOpen)
+
+    // Check for updates on foreground and snapshot active tab thumbnail when backgrounding
     DisposableEffect(lifecycleOwner, updateController) {
         val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_START) {
-                updateController.checkForUpdatesOnAppOpen()
+            when (event) {
+                Lifecycle.Event.ON_START -> {
+                    updateController.checkForUpdatesOnAppOpen()
+                }
+                Lifecycle.Event.ON_STOP -> {
+                    val activeView = latestWebViewRef
+                    if (!latestIsTabSwitcherOpen &&
+                        !latestIsSettingsOpen &&
+                        activeView != null &&
+                        activeView.tag == latestActiveTabId &&
+                        latestCurrentUrl.isNotEmpty()
+                    ) {
+                        thumbnailCache.captureFromWebView(
+                            tabId = latestActiveTabId,
+                            webView = activeView,
+                            isIncognito = latestIsIncognito
+                        )
+                    }
+                }
+                else -> Unit
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -141,6 +174,36 @@ fun BrowserScreen(
         if (uiState.currentUrl.isNotEmpty()) {
             delay(2500.milliseconds)
             viewModel.onRevealTimeout()
+        }
+    }
+
+    // Capture fresh thumbnail only when actively viewing the webpage (never inside QuickTabs or Settings)
+    LaunchedEffect(
+        uiState.activeTabId,
+        uiState.currentUrl,
+        uiState.isLoading,
+        uiState.isTabSwitcherOpen,
+        isSettingsOpen
+    ) {
+        val activeView = webViewRef
+        if (!uiState.isTabSwitcherOpen &&
+            !isSettingsOpen &&
+            !uiState.isLoading &&
+            uiState.currentUrl.isNotEmpty() &&
+            activeView != null &&
+            activeView.tag == uiState.activeTabId
+        ) {
+            delay(300.milliseconds)
+            if (!uiState.isTabSwitcherOpen &&
+                !isSettingsOpen &&
+                webViewRef?.tag == uiState.activeTabId
+            ) {
+                thumbnailCache.captureFromWebView(
+                    tabId = uiState.activeTabId,
+                    webView = activeView,
+                    isIncognito = uiState.isIncognito
+                )
+            }
         }
     }
 

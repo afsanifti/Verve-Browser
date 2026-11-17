@@ -1,9 +1,12 @@
 package com.verve.browser.presentation.browser.components.searchpill
 
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
-import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.drag
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -19,14 +22,18 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.positionChange
+import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -34,13 +41,24 @@ import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.lerp
 import androidx.compose.ui.unit.sp
+import kotlin.math.abs
+import kotlin.math.exp
+import kotlinx.coroutines.launch
 
 internal val ExpressiveToolbarQuickSpring = spring<Float>(
     dampingRatio = 0.78f,
     stiffness = 500f
 )
 
+// Material 3 Expressive spatial spring for smooth, fluid horizontal tab-swipe rebound
+private val ExpressiveSwipeSpatialSpring = spring<Float>(
+    dampingRatio = 0.78f,
+    stiffness = 360f
+)
+
 private val SideButtonSize = 56.dp
+private val SideButtonMinCompressedWidth = 36.dp
+private val SideButtonMaxCompressDp = SideButtonSize - SideButtonMinCompressedWidth // 20.dp
 private val SideButtonGap = 8.dp
 private val SideSlotFullWidth = SideButtonSize + SideButtonGap
 
@@ -59,9 +77,13 @@ fun ExpressiveBottomToolbar(
     isSearchFocused: Boolean = false,
     isPageLoading: Boolean = false,
     isIncognito: Boolean = false,
+    canSwipeToLeftTab: Boolean = false,
+    canSwipeToRightTab: Boolean = false,
     bottomWindowInsets: WindowInsets = WindowInsets.navigationBars.only(WindowInsetsSides.Bottom),
     onSearchFocusChanged: (Boolean) -> Unit = {},
     onCollapsedChange: (Boolean) -> Unit = {},
+    onSwipeToLeftTab: () -> Unit = {},
+    onSwipeToRightTab: () -> Unit = {},
     onToggleIncognito: () -> Unit = {},
     onLeftActionClick: () -> Unit = {},
     onSiteSettingsClick: () -> Unit = {},
@@ -69,11 +91,26 @@ fun ExpressiveBottomToolbar(
     onStopLoadingClick: () -> Unit = {}
 ) {
     val density = LocalDensity.current
+    val haptic = LocalHapticFeedback.current
+    val coroutineScope = rememberCoroutineScope()
     val textMeasurer = rememberTextMeasurer()
+
     val effectiveCollapsed = isWebMode && isCollapsed && !isSearchFocused
-    val swipeThresholdPx = with(density) { 18.dp.toPx() }
+    val verticalSwipeThresholdPx = with(density) { 18.dp.toPx() }
+    val horizontalCommitThresholdPx = with(density) { 46.dp.toPx() }
     val sideSlideOffsetPx = with(density) { 16.dp.toPx() }
-    var dragDelta by remember { mutableFloatStateOf(0f) }
+
+    val currentIsWebMode by rememberUpdatedState(isWebMode)
+    val currentEffectiveCollapsed by rememberUpdatedState(effectiveCollapsed)
+    val currentIsSearchFocused by rememberUpdatedState(isSearchFocused)
+    val currentCanSwipeLeftTab by rememberUpdatedState(canSwipeToLeftTab)
+    val currentCanSwipeRightTab by rememberUpdatedState(canSwipeToRightTab)
+    val currentOnCollapsedChange by rememberUpdatedState(onCollapsedChange)
+    val currentOnSwipeToLeftTab by rememberUpdatedState(onSwipeToLeftTab)
+    val currentOnSwipeToRightTab by rememberUpdatedState(onSwipeToRightTab)
+
+    // -1f = full swipe left (compresses left button), +1f = full swipe right (compresses right button)
+    val swipeProgress = remember { Animatable(0f) }
 
     val expandProgress by animateFloatAsState(
         targetValue = if (effectiveCollapsed) 0f else 1f,
@@ -135,30 +172,137 @@ fun ExpressiveBottomToolbar(
                 top = topPadding,
                 bottom = bottomPadding
             )
-            .pointerInput(isWebMode, effectiveCollapsed, isSearchFocused) {
-                if (!isWebMode || isSearchFocused) return@pointerInput
-                detectVerticalDragGestures(
-                    onDragStart = { dragDelta = 0f },
-                    onVerticalDrag = { change, dragAmount ->
-                        change.consume()
-                        dragDelta += dragAmount
-                        if (!effectiveCollapsed && dragDelta > swipeThresholdPx) {
-                            onCollapsedChange(true)
-                            dragDelta = 0f
-                        } else if (effectiveCollapsed && dragDelta < -swipeThresholdPx) {
-                            onCollapsedChange(false)
-                            dragDelta = 0f
+            .pointerInput(Unit) {
+                val touchSlop = viewConfiguration.touchSlop
+                awaitEachGesture {
+                    val down = awaitFirstDown(requireUnconsumed = false)
+                    if (currentIsSearchFocused) return@awaitEachGesture
+
+                    val velocityTracker = VelocityTracker()
+                    velocityTracker.addPosition(down.uptimeMillis, down.position)
+
+                    var totalDx = 0f
+                    var totalDy = 0f
+                    var verticalDragDelta = 0f
+                    var lockedAxis = 0 // 0 = undecided, 1 = horizontal, 2 = vertical
+                    var crossedCommitHaptic = false
+
+                    val completed = drag(down.id) { change ->
+                        val delta = change.positionChange()
+                        velocityTracker.addPosition(change.uptimeMillis, change.position)
+                        totalDx += delta.x
+                        totalDy += delta.y
+
+                        if (lockedAxis == 0) {
+                            if (abs(totalDx) > touchSlop || abs(totalDy) > touchSlop) {
+                                if (!currentEffectiveCollapsed && abs(totalDx) > abs(totalDy) * 1.15f) {
+                                    lockedAxis = 1
+                                    coroutineScope.launch { swipeProgress.stop() }
+                                } else if (currentIsWebMode) {
+                                    lockedAxis = 2
+                                }
+                            }
+                        }
+
+                        if (lockedAxis == 1) {
+                            change.consume()
+                            val isSwipingRight = totalDx > 0f
+                            val hasTargetTab = if (isSwipingRight) {
+                                currentCanSwipeLeftTab
+                            } else {
+                                currentCanSwipeRightTab
+                            }
+
+                            // Smooth asymptotic curve so the side button compresses organically
+                            val normalized = (abs(totalDx) / (horizontalCommitThresholdPx * 1.35f))
+                                .coerceAtLeast(0f)
+                            val easedMagnitude = 1f - exp(-1.45f * normalized)
+                            val resistance = if (hasTargetTab) 1f else 0.32f
+                            val targetProgress = (if (isSwipingRight) 1f else -1f) *
+                                    easedMagnitude * resistance
+
+                            if (hasTargetTab) {
+                                val isPastCommit = abs(totalDx) >= horizontalCommitThresholdPx
+                                if (isPastCommit && !crossedCommitHaptic) {
+                                    crossedCommitHaptic = true
+                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                } else if (!isPastCommit && crossedCommitHaptic) {
+                                    crossedCommitHaptic = false
+                                }
+                            }
+
+                            coroutineScope.launch {
+                                swipeProgress.snapTo(targetProgress)
+                            }
+                        } else if (lockedAxis == 2 && currentIsWebMode) {
+                            change.consume()
+                            verticalDragDelta += delta.y
+                            if (!currentEffectiveCollapsed && verticalDragDelta > verticalSwipeThresholdPx) {
+                                currentOnCollapsedChange(true)
+                                verticalDragDelta = 0f
+                            } else if (currentEffectiveCollapsed && verticalDragDelta < -verticalSwipeThresholdPx) {
+                                currentOnCollapsedChange(false)
+                                verticalDragDelta = 0f
+                            }
                         }
                     }
-                )
+
+                    if (lockedAxis == 1) {
+                        val velocityX = velocityTracker.calculateVelocity().x
+                        val isSwipingRight = totalDx > 0f
+                        val hasTargetTab = if (isSwipingRight) {
+                            currentCanSwipeLeftTab
+                        } else {
+                            currentCanSwipeRightTab
+                        }
+
+                        val isFastFling = if (isSwipingRight) {
+                            velocityX > 650f && totalDx > touchSlop
+                        } else {
+                            velocityX < -650f && totalDx < -touchSlop
+                        }
+
+                        val shouldCommit = completed && hasTargetTab &&
+                                (abs(totalDx) >= horizontalCommitThresholdPx || isFastFling)
+
+                        if (shouldCommit) {
+                            if (!crossedCommitHaptic) {
+                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            }
+                            if (isSwipingRight) {
+                                currentOnSwipeToLeftTab()
+                            } else {
+                                currentOnSwipeToRightTab()
+                            }
+                        }
+
+                        // Spring smoothly back to resting width (zero hard jump)
+                        coroutineScope.launch {
+                            swipeProgress.animateTo(
+                                targetValue = 0f,
+                                animationSpec = ExpressiveSwipeSpatialSpring
+                            )
+                        }
+                    }
+                }
             }
     ) {
         val clampedExpand = expandProgress.coerceAtLeast(0f)
         val clampedLeft = leftButtonProgress.coerceAtLeast(0f)
         val clampedRight = rightButtonProgress.coerceAtLeast(0f)
+        val currentSwipe = swipeProgress.value
 
-        val leftSlotWidth = SideSlotFullWidth * clampedLeft
-        val rightSlotWidth = SideSlotFullWidth * clampedRight
+        // Swiping left (currentSwipe < 0) shrinks the left button;
+        // Swiping right (currentSwipe > 0) shrinks the right button.
+        val leftCompressDp = SideButtonMaxCompressDp * (-currentSwipe).coerceIn(0f, 1f) * clampedLeft
+        val rightCompressDp = SideButtonMaxCompressDp * currentSwipe.coerceIn(0f, 1f) * clampedRight
+
+        val leftButtonWidth = (SideButtonSize - leftCompressDp).coerceAtLeast(SideButtonMinCompressedWidth)
+        val rightButtonWidth = (SideButtonSize - rightCompressDp).coerceAtLeast(SideButtonMinCompressedWidth)
+
+        val leftSlotWidth = (SideSlotFullWidth - leftCompressDp) * clampedLeft
+        val rightSlotWidth = (SideSlotFullWidth - rightCompressDp) * clampedRight
+
         val targetExpandedPillWidth = (maxWidth - leftSlotWidth - rightSlotWidth)
             .coerceAtLeast(collapsedPillWidth)
         val currentPillWidth = lerp(
@@ -166,6 +310,16 @@ fun ExpressiveBottomToolbar(
             stop = targetExpandedPillWidth,
             fraction = clampedExpand.coerceIn(0f, 1.03f)
         )
+
+        // Subtle inner content glide inside the pill (plus edge rubber-band when no side button exists)
+        val noLeftButtonEdgeNudgePx = if (clampedLeft < 0.05f && currentSwipe < 0f) {
+            with(density) { (12.dp * currentSwipe).toPx() }
+        } else {
+            0f
+        }
+        val contentShiftPx = with(density) {
+            ((rightCompressDp - leftCompressDp) * 0.45f).toPx()
+        } + noLeftButtonEdgeNudgePx
 
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -188,7 +342,10 @@ fun ExpressiveBottomToolbar(
                     contentAlignment = Alignment.CenterStart
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        ExpressiveLeftActionButton(onClick = onLeftActionClick)
+                        ExpressiveLeftActionButton(
+                            onClick = onLeftActionClick,
+                            buttonWidth = leftButtonWidth
+                        )
                         Spacer(modifier = Modifier.width(SideButtonGap))
                     }
                 }
@@ -205,6 +362,7 @@ fun ExpressiveBottomToolbar(
                 isThemeLoading = isThemeLoading,
                 isIncognito = isIncognito,
                 expandProgress = expandProgress,
+                swipeContentShiftPx = contentShiftPx,
                 onThemeAnimationCompleted = onThemeAnimationCompleted,
                 onFocusChanged = onSearchFocusChanged,
                 onExpandClick = { onCollapsedChange(false) },
@@ -232,7 +390,10 @@ fun ExpressiveBottomToolbar(
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Spacer(modifier = Modifier.width(SideButtonGap))
-                        ExpressiveTabButton(onClick = onTabSwitcherClick)
+                        ExpressiveTabButton(
+                            onClick = onTabSwitcherClick,
+                            buttonWidth = rightButtonWidth
+                        )
                     }
                 }
             }

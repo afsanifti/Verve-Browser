@@ -12,13 +12,23 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 
+data class ReleaseCheckResult(
+    val availableUpdate: AppUpdateManifest?,
+    val latestVersionName: String?,
+    val latestReleaseNotes: String?
+)
+
 class GitHubReleaseUpdateRepository(
     private val githubRepository: String = BuildConfig.GITHUB_REPOSITORY
 ) {
 
     suspend fun fetchAvailableUpdate(
         currentVersionCode: Int = BuildConfig.VERSION_CODE
-    ): Result<AppUpdateManifest?> = withContext(Dispatchers.IO) {
+    ): Result<AppUpdateManifest?> = fetchReleaseStatus(currentVersionCode).map { it.availableUpdate }
+
+    suspend fun fetchReleaseStatus(
+        currentVersionCode: Int = BuildConfig.VERSION_CODE
+    ): Result<ReleaseCheckResult> = withContext(Dispatchers.IO) {
         runCatching {
             require(githubRepository.contains("/") && githubRepository != "OWNER/REPO") {
                 "Configure githubRepository (owner/repo) before checking for updates."
@@ -36,16 +46,34 @@ class GitHubReleaseUpdateRepository(
 
             val releaseJson = try {
                 val code = apiConnection.responseCode
-                if (code == 404) return@runCatching null
+                if (code == 404) {
+                    return@runCatching ReleaseCheckResult(
+                        availableUpdate = null,
+                        latestVersionName = null,
+                        latestReleaseNotes = null
+                    )
+                }
                 check(code in 200..299) { "GitHub Releases API returned HTTP $code" }
                 JSONObject(apiConnection.inputStream.bufferedReader().use { it.readText() })
             } finally {
                 apiConnection.disconnect()
             }
 
-            if (releaseJson.optBoolean("draft", false)) return@runCatching null
+            if (releaseJson.optBoolean("draft", false)) {
+                return@runCatching ReleaseCheckResult(
+                    availableUpdate = null,
+                    latestVersionName = null,
+                    latestReleaseNotes = null
+                )
+            }
 
-            val assets = releaseJson.optJSONArray("assets") ?: return@runCatching null
+            val assets = releaseJson.optJSONArray("assets")
+                ?: return@runCatching ReleaseCheckResult(
+                    availableUpdate = null,
+                    latestVersionName = null,
+                    latestReleaseNotes = releaseJson.optString("body").trim().ifBlank { null }
+                )
+
             var manifestUrl: String? = null
             val assetUrlByName = HashMap<String, String>()
             val assetSizeByName = HashMap<String, Long>()
@@ -63,7 +91,13 @@ class GitHubReleaseUpdateRepository(
                 }
             }
 
-            val resolvedManifestUrl = manifestUrl ?: return@runCatching null
+            val resolvedManifestUrl = manifestUrl
+                ?: return@runCatching ReleaseCheckResult(
+                    availableUpdate = null,
+                    latestVersionName = releaseJson.optString("tag_name").removePrefix("v").trim().ifBlank { null },
+                    latestReleaseNotes = releaseJson.optString("body").trim().ifBlank { null }
+                )
+
             val manifestBody = fetchText(resolvedManifestUrl)
             val json = JSONObject(manifestBody)
 
@@ -71,27 +105,35 @@ class GitHubReleaseUpdateRepository(
             val remoteVersionName = json.getString("versionName").trim()
             val apkAssetName = json.getString("apkAssetName").trim()
             val sha256 = json.getString("sha256").trim()
-            val releaseNotes = json.optString("releaseNotes").trim()
+            val githubReleaseBody = releaseJson.optString("body").trim()
+            val manifestReleaseNotes = json.optString("releaseNotes").trim()
+            val releaseNotes = githubReleaseBody.ifBlank { manifestReleaseNotes }
 
             check(remoteVersionCode > 0 && remoteVersionName.isNotEmpty() && sha256.length == 64) {
                 "Invalid update.json manifest fields"
             }
 
-            if (remoteVersionCode <= currentVersionCode) {
-                return@runCatching null
+            val manifest = if (remoteVersionCode > currentVersionCode) {
+                val apkDownloadUrl = assetUrlByName[apkAssetName]
+                    ?: error("APK asset '$apkAssetName' listed in update.json was not found in release assets")
+
+                AppUpdateManifest(
+                    versionCode = remoteVersionCode,
+                    versionName = remoteVersionName,
+                    apkAssetName = apkAssetName,
+                    sha256 = sha256,
+                    releaseNotes = releaseNotes,
+                    apkDownloadUrl = apkDownloadUrl,
+                    apkSizeBytes = assetSizeByName[apkAssetName] ?: 0L
+                )
+            } else {
+                null
             }
 
-            val apkDownloadUrl = assetUrlByName[apkAssetName]
-                ?: error("APK asset '$apkAssetName' listed in update.json was not found in release assets")
-
-            AppUpdateManifest(
-                versionCode = remoteVersionCode,
-                versionName = remoteVersionName,
-                apkAssetName = apkAssetName,
-                sha256 = sha256,
-                releaseNotes = releaseNotes,
-                apkDownloadUrl = apkDownloadUrl,
-                apkSizeBytes = assetSizeByName[apkAssetName] ?: 0L
+            ReleaseCheckResult(
+                availableUpdate = manifest,
+                latestVersionName = remoteVersionName,
+                latestReleaseNotes = releaseNotes.ifBlank { null }
             )
         }
     }

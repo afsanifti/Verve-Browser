@@ -81,6 +81,7 @@ fun ExpressiveSearchPill(
     isThemeLoading: Boolean = false,
     isIncognito: Boolean = false,
     expandProgress: Float? = null,
+    swipeContentShiftPx: Float = 0f,
     onThemeAnimationCompleted: () -> Unit = {},
     onFocusChanged: (Boolean) -> Unit = {},
     onExpandClick: () -> Unit = {},
@@ -207,7 +208,13 @@ fun ExpressiveSearchPill(
             val iconScale = 0.68f + 0.32f * iconProgress
             val domainHorizontalPadding = lerp(14.dp, 54.dp, clampedExpand)
 
-            Box(modifier = Modifier.fillMaxSize()) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .graphicsLayer {
+                        translationX = swipeContentShiftPx
+                    }
+            ) {
                 IconButton(
                     onClick = onSiteSettingsClick,
                     enabled = iconProgress > 0.65f,
@@ -288,6 +295,9 @@ fun ExpressiveSearchPill(
             Row(
                 modifier = Modifier
                     .fillMaxSize()
+                    .graphicsLayer {
+                        translationX = swipeContentShiftPx
+                    }
                     .padding(horizontal = 20.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {

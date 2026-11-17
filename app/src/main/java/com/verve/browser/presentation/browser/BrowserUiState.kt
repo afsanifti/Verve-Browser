@@ -32,7 +32,7 @@ data class BrowserUiState(
         get() = tabs.firstOrNull { it.id == activeTabId } ?: tabs.firstOrNull()
 
     val isIncognito: Boolean
-        get() = activeTab?.isIncognito == true
+        get() = activeTab?.isIncognito ?: false
 
     val isAtPageBottom: Boolean
         get() = bottomCurtainProgress >= 0.99f || hasFixedBottomBar

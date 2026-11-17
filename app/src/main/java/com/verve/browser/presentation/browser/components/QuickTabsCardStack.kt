@@ -1,8 +1,10 @@
 package com.verve.browser.presentation.browser.components
 
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutLinearInEasing
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.drag
@@ -51,6 +53,11 @@ private val FluidStackSpring = spring<Float>(
 private val FluidBiasDpSpring = spring<Dp>(
     dampingRatio = 0.76f,
     stiffness = 200f
+)
+
+private val DismissExitSpec = tween<Float>(
+    durationMillis = 190,
+    easing = FastOutLinearInEasing
 )
 
 private enum class DragAxis {
@@ -108,33 +115,19 @@ internal fun QuickTabsCardStack(
     val maxIndex = (allTabsInOrder.size - 1).coerceAtLeast(0)
     val nearestIndex = currentPos.roundToInt().coerceIn(0, maxIndex)
 
-    // Handle smooth post-close promotion and new tab insertion at the far right (index 0)
+    // Handle external tab removals and new tab insertion at the far right (index 0)
     LaunchedEffect(allTabsInOrder) {
         val prevCount = previousTabCount
         previousTabCount = allTabsInOrder.size
 
-        val pendingClosedId = closingTabId
-        if (pendingClosedId != null && allTabsInOrder.none { it.id == pendingClosedId }) {
-            val removedIdx = closedFromIndex
-            closingTabId = null
-            closedFromIndex = -1
-            dismissOffsetY.snapTo(0f)
-
+        if (allTabsInOrder.size < prevCount && closingTabId == null) {
             val newMaxIdx = (allTabsInOrder.size - 1).coerceAtLeast(0)
-            val targetIdx = removedIdx.coerceIn(0, newMaxIdx)
+            val targetIdx = scrollPosition.value.roundToInt().coerceIn(0, newMaxIdx)
             lastHapticIndex = targetIdx
-
             allTabsInOrder.getOrNull(targetIdx)?.let { nextTab ->
                 currentOnFocusTab(nextTab.id)
             }
-
-            if (removedIdx <= newMaxIdx) {
-                scrollPosition.snapTo(targetIdx.toFloat())
-                postCloseShiftDelta.snapTo(1f)
-                postCloseShiftDelta.animateTo(0f, FluidStackSpring)
-            } else {
-                scrollPosition.animateTo(targetIdx.toFloat(), FluidStackSpring)
-            }
+            scrollPosition.snapTo(targetIdx.toFloat())
             return@LaunchedEffect
         }
 
@@ -269,10 +262,16 @@ internal fun QuickTabsCardStack(
                                 coroutineScope.launch {
                                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                     dismissOffsetY.animateTo(
-                                        targetValue = -cardHeightPx * 1.35f,
-                                        initialVelocity = velocity.y,
-                                        animationSpec = FluidStackSpring
+                                        targetValue = -cardHeightPx * 1.15f,
+                                        animationSpec = DismissExitSpec
                                     )
+                                    val newMaxIdx = (currentTabs.size - 2).coerceAtLeast(0)
+                                    val nextTargetIdx = targetIdx.coerceIn(0, newMaxIdx)
+                                    lastHapticIndex = nextTargetIdx
+                                    closingTabId = null
+                                    closedFromIndex = -1
+                                    scrollPosition.snapTo(nextTargetIdx.toFloat())
+                                    dismissOffsetY.snapTo(0f)
                                     currentOnCloseTab(targetTab.id)
                                 }
                             }
@@ -308,7 +307,7 @@ internal fun QuickTabsCardStack(
     ) {
         val activeClosingId = closingTabId
         val activeShiftDelta = postCloseShiftDelta.value
-        val activeClosedIdx = closedFromIndex
+        val pivotIdx = if (closedFromIndex >= 0) closedFromIndex else nearestIndex
 
         allTabsInOrder.forEachIndexed { index, tab ->
             val shiftOffset = if (activeShiftDelta > 0f && index >= nearestIndex) {
@@ -326,23 +325,13 @@ internal fun QuickTabsCardStack(
                 index == nearestIndex
             }
 
-            // While dragging a card upward, subtly promote the next adjacent card into view
-            val upwardDismissProgress = (abs(dismissOffsetY.value) / (cardHeightPx * 0.85f)).coerceIn(0f, 1f)
-            val nextCandidateIndex = if (activeClosedIdx >= 0) {
-                if (activeClosedIdx < maxIndex) activeClosedIdx + 1 else activeClosedIdx - 1
-            } else {
-                if (nearestIndex < maxIndex) nearestIndex + 1 else nearestIndex - 1
-            }
-            val promotionBoost = if (!isDismissingCard && index == nextCandidateIndex) {
-                upwardDismissProgress * 0.35f
-            } else {
-                0f
-            }
-
-            val effectiveDelta = if (delta > 0f) {
-                (delta - promotionBoost).coerceAtLeast(0f)
-            } else {
-                (delta + promotionBoost).coerceAtMost(0f)
+            // Promote remaining cards smoothly to their post-close slots as the card exits upward
+            val upwardDismissProgress = (abs(dismissOffsetY.value) / (cardHeightPx * 0.90f)).coerceIn(0f, 1f)
+            val effectiveDelta = when {
+                isDismissingCard -> delta
+                pivotIdx < maxIndex && index > pivotIdx -> delta - upwardDismissProgress
+                pivotIdx == maxIndex && index == pivotIdx - 1 -> delta + upwardDismissProgress
+                else -> delta
             }
 
             val focusProgress = (1f - abs(effectiveDelta)).coerceIn(0f, 1f)

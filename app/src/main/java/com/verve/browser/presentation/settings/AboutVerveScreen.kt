@@ -5,6 +5,8 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.calculateEndPadding
+import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -35,10 +37,16 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import com.verve.browser.presentation.update.AppUpdateUiState
 
@@ -52,8 +60,10 @@ fun AboutVerveScreen(
     onNavigateBack: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val layoutDirection = LocalLayoutDirection.current
+
     LaunchedEffect(Unit) {
-        if (!updateState.isDownloading && updateState.availableUpdate == null) {
+        if (!updateState.isDownloading && !updateState.isChecking) {
             onCheckForUpdates()
         }
     }
@@ -62,6 +72,12 @@ fun AboutVerveScreen(
         targetValue = updateState.downloadProgress,
         label = "aboutVerveDownloadProgress"
     )
+
+    val availableUpdate = updateState.availableUpdate
+    val recentNotes = availableUpdate?.releaseNotes?.takeIf { it.isNotBlank() }
+        ?: updateState.recentReleaseNotes.orEmpty()
+    val recentNotesVersion = availableUpdate?.versionName
+        ?: updateState.recentReleaseVersionName
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
@@ -92,9 +108,14 @@ fun AboutVerveScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(innerPadding)
+                .padding(top = innerPadding.calculateTopPadding())
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 16.dp, vertical = 12.dp)
+                .padding(
+                    start = innerPadding.calculateStartPadding(layoutDirection) + 16.dp,
+                    end = innerPadding.calculateEndPadding(layoutDirection) + 16.dp,
+                    top = 12.dp,
+                    bottom = innerPadding.calculateBottomPadding() + 24.dp
+                )
         ) {
             // Current Version Card
             Surface(
@@ -147,10 +168,8 @@ fun AboutVerveScreen(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(modifier = Modifier.padding(20.dp)) {
-                    val availableUpdate = updateState.availableUpdate
-
                     when {
-                        updateState.isChecking -> {
+                        updateState.isChecking && availableUpdate == null -> {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 CircularProgressIndicator(
                                     strokeWidth = 2.5.dp,
@@ -189,22 +208,6 @@ fun AboutVerveScreen(
                                         text = "${updateState.currentVersionName} → ${availableUpdate.versionName}",
                                         style = MaterialTheme.typography.bodyMedium,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                            }
-
-                            if (availableUpdate.releaseNotes.isNotBlank()) {
-                                Spacer(modifier = Modifier.height(14.dp))
-                                Surface(
-                                    shape = RoundedCornerShape(16.dp),
-                                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                                    modifier = Modifier.fillMaxWidth()
-                                ) {
-                                    Text(
-                                        text = availableUpdate.releaseNotes,
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        color = MaterialTheme.colorScheme.onSurface,
-                                        modifier = Modifier.padding(14.dp)
                                     )
                                 }
                             }
@@ -381,6 +384,161 @@ fun AboutVerveScreen(
                     }
                 }
             }
+
+            // Full Changelog Container with formatted headlines and bullet lists
+            if (recentNotes.isNotBlank()) {
+                Spacer(modifier = Modifier.height(16.dp))
+
+                Surface(
+                    shape = RoundedCornerShape(24.dp),
+                    color = MaterialTheme.colorScheme.surfaceContainer,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(20.dp)) {
+                        Text(
+                            text = if (!recentNotesVersion.isNullOrBlank()) {
+                                "What's new in $recentNotesVersion"
+                            } else {
+                                "What's new"
+                            },
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        FormattedReleaseNotes(notes = recentNotes)
+                    }
+                }
+            }
+        }
+    }
+}
+
+private sealed interface ReleaseNoteBlock {
+    data class Heading(val text: String) : ReleaseNoteBlock
+    data class Bullet(val text: String, val isSubBullet: Boolean = false) : ReleaseNoteBlock
+    data class Paragraph(val text: String) : ReleaseNoteBlock
+}
+
+@Composable
+private fun FormattedReleaseNotes(
+    notes: String,
+    modifier: Modifier = Modifier
+) {
+    val blocks = remember(notes) { parseReleaseNoteBlocks(notes) }
+
+    Column(modifier = modifier.fillMaxWidth()) {
+        blocks.forEachIndexed { index, block ->
+            when (block) {
+                is ReleaseNoteBlock.Heading -> {
+                    Text(
+                        text = block.text,
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.padding(
+                            top = if (index == 0) 0.dp else 14.dp,
+                            bottom = 4.dp
+                        )
+                    )
+                }
+
+                is ReleaseNoteBlock.Bullet -> {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(
+                                start = if (block.isSubBullet) 16.dp else 0.dp,
+                                top = 2.dp,
+                                bottom = 2.dp
+                            ),
+                        verticalAlignment = Alignment.Top
+                    ) {
+                        Text(
+                            text = if (block.isSubBullet) "◦" else "•",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = if (block.isSubBullet) {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            } else {
+                                MaterialTheme.colorScheme.primary
+                            },
+                            modifier = Modifier.width(16.dp)
+                        )
+                        Text(
+                            text = parseInlineBold(block.text),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = if (block.isSubBullet) {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            } else {
+                                MaterialTheme.colorScheme.onSurface
+                            },
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                }
+
+                is ReleaseNoteBlock.Paragraph -> {
+                    Text(
+                        text = parseInlineBold(block.text),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.padding(vertical = 3.dp)
+                    )
+                }
+            }
+        }
+    }
+}
+
+private fun parseReleaseNoteBlocks(rawNotes: String): List<ReleaseNoteBlock> {
+    val headingRegex = Regex("^#{1,3}\\s+(.+)$")
+    val subBulletRegex = Regex("^\\s{2,}[-*•]\\s+(.+)$")
+    val bulletRegex = Regex("^[-*•]\\s+(.+)$")
+
+    return rawNotes
+        .lines()
+        .mapNotNull { rawLine ->
+            val trimmedEnd = rawLine.trimEnd()
+            val trimmed = trimmedEnd.trim()
+            if (trimmed.isEmpty()) return@mapNotNull null
+
+            headingRegex.find(trimmed)?.let { match ->
+                return@mapNotNull ReleaseNoteBlock.Heading(match.groupValues[1].trim())
+            }
+            subBulletRegex.find(trimmedEnd)?.let { match ->
+                return@mapNotNull ReleaseNoteBlock.Bullet(
+                    text = match.groupValues[1].trim(),
+                    isSubBullet = true
+                )
+            }
+            bulletRegex.find(trimmed)?.let { match ->
+                return@mapNotNull ReleaseNoteBlock.Bullet(
+                    text = match.groupValues[1].trim(),
+                    isSubBullet = false
+                )
+            }
+            ReleaseNoteBlock.Paragraph(trimmed)
+        }
+}
+
+private fun parseInlineBold(text: String): AnnotatedString {
+    return buildAnnotatedString {
+        var currentIndex = 0
+        val boldRegex = Regex("\\*\\*(.+?)\\*\\*")
+        for (match in boldRegex.findAll(text)) {
+            if (match.range.first > currentIndex) {
+                append(text.substring(currentIndex, match.range.first))
+            }
+            withStyle(SpanStyle(fontWeight = FontWeight.SemiBold)) {
+                append(match.groupValues[1])
+            }
+            currentIndex = match.range.last + 1
+        }
+        if (currentIndex < text.length) {
+            append(text.substring(currentIndex))
         }
     }
 }

@@ -42,6 +42,16 @@ internal fun BrowserSearchOverlay(
 ) {
     val focusManager = LocalFocusManager.current
 
+    val activeTabIndex = remember(uiState.tabs, uiState.activeTabId) {
+        uiState.tabs.indexOfFirst { it.id == uiState.activeTabId }
+    }
+    val leftTab = if (activeTabIndex > 0) uiState.tabs[activeTabIndex - 1] else null
+    val rightTab = if (activeTabIndex != -1 && activeTabIndex < uiState.tabs.lastIndex) {
+        uiState.tabs[activeTabIndex + 1]
+    } else {
+        null
+    }
+
     Box(modifier = modifier.fillMaxSize()) {
         // Dim scrim behind search suggestions when focused
         AnimatedVisibility(
@@ -96,7 +106,11 @@ internal fun BrowserSearchOverlay(
                 onUrlSubmitted = viewModel::onUrlSubmitted,
                 onTabSwitcherClick = {
                     webViewRef?.let { activeView ->
-                        thumbnailCache.captureFromWebView(uiState.activeTabId, activeView)
+                        thumbnailCache.captureFromWebView(
+                            tabId = uiState.activeTabId,
+                            webView = activeView,
+                            isIncognito = uiState.isIncognito
+                        )
                     }
                     viewModel.openTabSwitcher()
                 },
@@ -108,10 +122,36 @@ internal fun BrowserSearchOverlay(
                 isSearchFocused = uiState.isSearchFocused,
                 isPageLoading = uiState.isLoading,
                 isIncognito = uiState.isIncognito,
+                canSwipeToLeftTab = leftTab != null,
+                canSwipeToRightTab = rightTab != null,
                 bottomWindowInsets = bottomNavInsets,
                 onSearchFocusChanged = viewModel::onSearchFocusChanged,
                 onCollapsedChange = { collapsed ->
                     viewModel.setToolbarCollapsed(collapsed = collapsed, isManual = true)
+                },
+                onSwipeToLeftTab = {
+                    leftTab?.let { target ->
+                        webViewRef?.let { activeView ->
+                            thumbnailCache.captureFromWebView(
+                                tabId = uiState.activeTabId,
+                                webView = activeView,
+                                isIncognito = uiState.isIncognito
+                            )
+                        }
+                        viewModel.switchToTab(target.id)
+                    }
+                },
+                onSwipeToRightTab = {
+                    rightTab?.let { target ->
+                        webViewRef?.let { activeView ->
+                            thumbnailCache.captureFromWebView(
+                                tabId = uiState.activeTabId,
+                                webView = activeView,
+                                isIncognito = uiState.isIncognito
+                            )
+                        }
+                        viewModel.switchToTab(target.id)
+                    }
                 },
                 onToggleIncognito = viewModel::toggleIncognito,
                 onRefreshClick = {

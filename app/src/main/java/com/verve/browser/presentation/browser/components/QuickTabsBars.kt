@@ -60,8 +60,7 @@ internal fun QuickTabsTopBar(
         Text(
             text = if (stackCount > 0) "Quick Tabs · $stackCount stacks" else "Quick Tabs",
             color = MaterialTheme.colorScheme.onSurface,
-            style = MaterialTheme.typography.titleLarge.copy(
-                fontSize = 22.sp,
+            style = MaterialTheme.typography.headlineSmall.copy(
                 fontWeight = FontWeight.W500
             ),
             maxLines = 1,

@@ -204,22 +204,36 @@ jobs:
           TAG_NAME="${{ steps.version.outputs.tag_name }}"
           RELEASE_TAG="${TAG_NAME:-v${ACTUAL_VERSION_NAME}}"
 
-          RELEASE_NOTES=""
-          if [[ -n "${TAG_NAME}" ]] && git rev-parse -q --verify "refs/tags/${TAG_NAME}" >/dev/null; then
-            RELEASE_NOTES=$(git tag -l --format='%(contents)' "${TAG_NAME}" | sed '/^-----BEGIN PGP SIGNATURE-----/,$d' | xargs -0 printf "%s" || true)
+          FILE_NOTES=""
+          if [[ -f "release_notes.txt" ]]; then
+            FILE_NOTES=$(awk 'NF {p=1} p' release_notes.txt | tac | awk 'NF {p=1} p' | tac || true)
           fi
 
-          if [[ -z "${RELEASE_NOTES// /}" ]]; then
-            PREV_TAG=$(git describe --tags --abbrev=0 "${RELEASE_TAG}^" 2>/dev/null || true)
-            if [[ -n "${PREV_TAG}" ]]; then
-              RELEASE_NOTES=$(git log "${PREV_TAG}..HEAD" --pretty=format:"- %s" --no-merges || true)
-            else
-              RELEASE_NOTES=$(git log -n 10 --pretty=format:"- %s" --no-merges || true)
+          TAG_ANNOTATION=""
+          if [[ -n "${TAG_NAME}" ]] && git rev-parse -q --verify "refs/tags/${TAG_NAME}" >/dev/null; then
+            RAW_ANNOTATION=$(git tag -l --format='%(contents)' "${TAG_NAME}" | sed '/^-----BEGIN PGP SIGNATURE-----/,$d' | awk 'NF {p=1} p' | tac | awk 'NF {p=1} p' | tac || true)
+            if [[ -n "${RAW_ANNOTATION}" && ! "${RAW_ANNOTATION}" =~ ^(Release[[:space:]]+)?v?[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?$ ]]; then
+              TAG_ANNOTATION="${RAW_ANNOTATION}"
             fi
           fi
 
-          if [[ -z "${RELEASE_NOTES// /}" ]]; then
-            RELEASE_NOTES="Verve Browser ${ACTUAL_VERSION_NAME} release"
+          if [[ -n "${FILE_NOTES}" ]]; then
+            RELEASE_NOTES="${FILE_NOTES}"
+          elif [[ -n "${TAG_ANNOTATION}" ]]; then
+            RELEASE_NOTES="${TAG_ANNOTATION}"
+          else
+            PREV_TAG=$(git describe --tags --abbrev=0 --exclude="${RELEASE_TAG}" HEAD 2>/dev/null || true)
+            if [[ -n "${PREV_TAG}" ]]; then
+              COMMIT_LOG=$(git log "${PREV_TAG}..HEAD" --pretty=format:"- %s" --no-merges || true)
+            else
+              COMMIT_LOG=$(git log HEAD -n 15 --pretty=format:"- %s" --no-merges || true)
+            fi
+
+            if [[ -n "${COMMIT_LOG}" ]]; then
+              RELEASE_NOTES="## Changes"$'\n'"${COMMIT_LOG}"
+            else
+              RELEASE_NOTES="## Changes"$'\n'"- Verve Browser ${ACTUAL_VERSION_NAME} release"
+            fi
           fi
 
           NOTES_FILE="${RUNNER_TEMP}/release-notes.md"

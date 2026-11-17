@@ -74,7 +74,7 @@ val AppTypography = Typography(
         letterSpacing = 0.sp
     ),
     headlineSmall = TextStyle(
-        fontFamily = variableFontFamily(rond = 60f, grad = 0f, opsz = 24f, wdth = 100f),
+        fontFamily = variableFontFamily(rond = 100f, grad = 0f, opsz = 24f, wdth = 100f),
         fontWeight = FontWeight.SemiBold,
         fontSize = 24.sp,
         lineHeight = 32.sp,

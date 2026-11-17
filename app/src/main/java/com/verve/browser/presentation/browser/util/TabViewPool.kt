@@ -2,7 +2,9 @@ package com.verve.browser.presentation.browser.util
 
 import android.content.Context
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.graphics.Canvas
+import android.os.Build
 import android.os.Bundle
 import android.util.LruCache
 import android.view.ViewGroup
@@ -10,16 +12,57 @@ import android.webkit.WebView
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
+import java.io.File
 import kotlin.math.roundToInt
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
-class TabThumbnailCache(maxEntries: Int = 16) {
+class TabThumbnailCache(
+    context: Context? = null,
+    maxEntries: Int = 16
+) {
+    private val appContext = context?.applicationContext
+    private val diskCacheDir: File? = appContext?.let {
+        File(it.cacheDir, "tab_thumbnails").apply { mkdirs() }
+    }
+    private val ioScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     private val cache = LruCache<String, ImageBitmap>(maxEntries)
     private val revisions = mutableStateMapOf<String, Int>()
+    private val pendingDiskLoads = mutableSetOf<String>()
+
+    companion object {
+        private const val TARGET_WIDTH_PX = 540
+        private const val CARD_ASPECT_RATIO = 269f / 564f
+    }
 
     fun get(tabId: String): ImageBitmap? {
         revisions[tabId]
-        return cache.get(tabId)
+        cache.get(tabId)?.let { return it }
+
+        val dir = diskCacheDir ?: return null
+        if (pendingDiskLoads.add(tabId)) {
+            ioScope.launch {
+                val diskFile = File(dir, "$tabId.webp")
+                val decoded = if (diskFile.exists()) {
+                    runCatching {
+                        BitmapFactory.decodeFile(diskFile.absolutePath)?.asImageBitmap()
+                    }.getOrNull()
+                } else {
+                    null
+                }
+                withContext(Dispatchers.Main) {
+                    pendingDiskLoads.remove(tabId)
+                    if (decoded != null && cache.get(tabId) == null) {
+                        put(tabId, decoded)
+                    }
+                }
+            }
+        }
+        return null
     }
 
     fun put(tabId: String, bitmap: ImageBitmap) {
@@ -30,6 +73,21 @@ class TabThumbnailCache(maxEntries: Int = 16) {
     fun remove(tabId: String) {
         cache.remove(tabId)
         revisions.remove(tabId)
+        val dir = diskCacheDir ?: return
+        ioScope.launch {
+            File(dir, "$tabId.webp").delete()
+        }
+    }
+
+    fun pruneOrphans(validTabIds: Set<String>) {
+        val dir = diskCacheDir ?: return
+        ioScope.launch {
+            dir.listFiles()?.forEach { file ->
+                if (file.nameWithoutExtension !in validTabIds) {
+                    file.delete()
+                }
+            }
+        }
     }
 
     fun clear() {
@@ -37,31 +95,60 @@ class TabThumbnailCache(maxEntries: Int = 16) {
         revisions.clear()
     }
 
-    fun captureFromWebView(tabId: String, webView: WebView?) {
+    fun captureFromWebView(
+        tabId: String,
+        webView: WebView?,
+        isIncognito: Boolean = false
+    ) {
         val view = webView ?: return
         if (tabId.isBlank() || !view.isAttachedToWindow || view.width <= 0 || view.height <= 0) return
 
-        val captured = renderWebViewBitmap(view) ?: return
-        put(tabId, captured)
+        val loadedUrl = view.url
+        if (loadedUrl.isNullOrBlank() || loadedUrl == "about:blank") return
+
+        val bitmap = renderWebViewBitmap(view) ?: return
+        put(tabId, bitmap.asImageBitmap())
+
+        val dir = diskCacheDir ?: return
+        ioScope.launch {
+            val diskFile = File(dir, "$tabId.webp")
+            if (isIncognito) {
+                if (diskFile.exists()) diskFile.delete()
+                return@launch
+            }
+            runCatching {
+                val format = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                    Bitmap.CompressFormat.WEBP_LOSSY
+                } else {
+                    @Suppress("DEPRECATION")
+                    Bitmap.CompressFormat.WEBP
+                }
+                diskFile.outputStream().use { out ->
+                    bitmap.compress(format, 80, out)
+                }
+            }
+        }
     }
 
-    private fun renderWebViewBitmap(webView: WebView): ImageBitmap? {
+    private fun renderWebViewBitmap(webView: WebView): Bitmap? {
         val viewWidth = webView.width
         val viewHeight = webView.height
         if (viewWidth <= 0 || viewHeight <= 0) return null
 
-        val targetWidth = minOf(viewWidth, 540)
+        val targetWidth = minOf(viewWidth, TARGET_WIDTH_PX)
         val scale = targetWidth.toFloat() / viewWidth.toFloat()
-        val targetHeight = (viewHeight * scale).roundToInt().coerceAtLeast(1)
+        val maxScaledHeight = (viewHeight * scale).roundToInt().coerceAtLeast(1)
+        val cardScaledHeight = (targetWidth / CARD_ASPECT_RATIO).roundToInt().coerceAtLeast(1)
+        val targetHeight = minOf(maxScaledHeight, cardScaledHeight)
 
         var bitmap: Bitmap? = null
         return runCatching {
-            val created = Bitmap.createBitmap(targetWidth, targetHeight, Bitmap.Config.RGB_565)
+            val created = Bitmap.createBitmap(targetWidth, targetHeight, Bitmap.Config.ARGB_8888)
             bitmap = created
             val canvas = Canvas(created)
             canvas.scale(scale, scale)
             webView.draw(canvas)
-            created.asImageBitmap()
+            created
         }.getOrElse {
             bitmap?.recycle()
             null

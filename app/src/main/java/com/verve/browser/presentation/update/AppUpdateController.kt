@@ -22,6 +22,8 @@ data class AppUpdateUiState(
     val currentVersionCode: Int = BuildConfig.VERSION_CODE,
     val isChecking: Boolean = false,
     val availableUpdate: AppUpdateManifest? = null,
+    val recentReleaseVersionName: String? = null,
+    val recentReleaseNotes: String? = null,
     val isSheetVisible: Boolean = false,
     val isDownloading: Boolean = false,
     val downloadProgress: Float = 0f,
@@ -41,7 +43,12 @@ class AppUpdateController(
     private val prefs = appContext.getSharedPreferences("verve_update_prefs", Context.MODE_PRIVATE)
     private val updatesDir = File(appContext.cacheDir, "updates")
 
-    private val _uiState = MutableStateFlow(AppUpdateUiState())
+    private val _uiState = MutableStateFlow(
+        AppUpdateUiState(
+            recentReleaseVersionName = prefs.getString(KEY_RECENT_RELEASE_VERSION_NAME, null),
+            recentReleaseNotes = prefs.getString(KEY_RECENT_RELEASE_NOTES, null)
+        )
+    )
     val uiState: StateFlow<AppUpdateUiState> = _uiState.asStateFlow()
 
     private var downloadJob: Job? = null
@@ -77,6 +84,23 @@ class AppUpdateController(
         }
     }
 
+    private fun persistRecentReleaseNotes(versionName: String?, notes: String?) {
+        val cleanNotes = notes?.trim()?.takeIf { it.isNotEmpty() } ?: return
+        val cleanVersion = versionName?.trim()?.takeIf { it.isNotEmpty() }
+
+        prefs.edit()
+            .putString(KEY_RECENT_RELEASE_VERSION_NAME, cleanVersion)
+            .putString(KEY_RECENT_RELEASE_NOTES, cleanNotes)
+            .apply()
+
+        _uiState.update {
+            it.copy(
+                recentReleaseVersionName = cleanVersion ?: it.recentReleaseVersionName,
+                recentReleaseNotes = cleanNotes
+            )
+        }
+    }
+
     /**
      * Checks GitHub Releases whenever the app is opened and opens the modal sheet
      * automatically if a newer version is available.
@@ -102,10 +126,11 @@ class AppUpdateController(
         scope.launch {
             _uiState.update { it.copy(isChecking = true, errorMessage = null) }
 
-            val result = repository.fetchAvailableUpdate()
+            val result = repository.fetchReleaseStatus()
 
             result.fold(
-                onSuccess = { manifest ->
+                onSuccess = { status ->
+                    val manifest = status.availableUpdate
                     if (manifest == null) {
                         deleteUpdatesDirectory()
                         prefs.edit().remove(KEY_PENDING_INSTALL_VERSION_CODE).apply()
@@ -116,6 +141,11 @@ class AppUpdateController(
                             manifest = manifest
                         )
                     }
+
+                    persistRecentReleaseNotes(
+                        versionName = manifest?.versionName ?: status.latestVersionName,
+                        notes = manifest?.releaseNotes ?: status.latestReleaseNotes
+                    )
 
                     _uiState.update {
                         it.copy(
@@ -182,6 +212,7 @@ class AppUpdateController(
 
             result.fold(
                 onSuccess = { apkFile ->
+                    persistRecentReleaseNotes(manifest.versionName, manifest.releaseNotes)
                     prefs.edit()
                         .putInt(KEY_PENDING_INSTALL_VERSION_CODE, manifest.versionCode)
                         .apply()
@@ -246,5 +277,7 @@ class AppUpdateController(
 
     companion object {
         private const val KEY_PENDING_INSTALL_VERSION_CODE = "pending_install_version_code"
+        private const val KEY_RECENT_RELEASE_VERSION_NAME = "recent_release_version_name"
+        private const val KEY_RECENT_RELEASE_NOTES = "recent_release_notes"
     }
 }
