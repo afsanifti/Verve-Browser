@@ -34,6 +34,7 @@ fun VerveBrowserTheme(
     if (isIncognito) {
         DynamicMaterialExpressiveTheme(
             seedColor = Color(0xFF5F6368),
+            typography = AppTypography,
             isDark = isDark,
             style = PaletteStyle.Monochrome,
             animate = true,
@@ -55,6 +56,7 @@ fun VerveBrowserTheme(
 
         MaterialTheme(
             colorScheme = systemColorScheme,
+            typography = AppTypography,
             content = content
         )
     } else {
@@ -70,6 +72,7 @@ fun VerveBrowserTheme(
 
         DynamicMaterialExpressiveTheme(
             seedColor = siteSeedColor ?: wallpaperSeed,
+            typography = AppTypography,
             isDark = isDark,
             style = paletteStyle,
             animate = true,

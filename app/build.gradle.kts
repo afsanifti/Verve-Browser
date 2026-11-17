@@ -1,3 +1,7 @@
+import java.io.File
+import java.security.MessageDigest
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
@@ -8,6 +12,31 @@ val ciVersionName = providers.gradleProperty("versionName").orNull ?: "1.0"
 val ciGithubRepository = providers.gradleProperty("githubRepository").orNull
     ?: System.getenv("GITHUB_REPOSITORY")
     ?: "OWNER/REPO"
+
+val localProps = Properties().apply {
+    val propsFile = rootProject.file("local.properties")
+    if (propsFile.exists()) {
+        propsFile.inputStream().use { load(it) }
+    }
+}
+
+fun resolveSecret(key: String): String? =
+    (System.getenv(key)?.takeIf { it.isNotBlank() } ?: localProps.getProperty(key))
+        ?.trim()
+        ?.removeSurrounding("\"")
+        ?.removeSurrounding("'")
+        ?.takeIf { it.isNotBlank() }
+
+fun resolveKeystoreFile(rawPath: String?): File? {
+    if (rawPath.isNullOrBlank()) return null
+    val expanded = if (rawPath.startsWith("~/")) {
+        System.getProperty("user.home") + rawPath.removePrefix("~")
+    } else {
+        rawPath
+    }
+    val candidate = File(expanded)
+    return if (candidate.isAbsolute) candidate else rootProject.file(expanded)
+}
 
 android {
     namespace = "com.verve.browser"
@@ -30,14 +59,17 @@ android {
     }
 
     signingConfigs {
-        val keystorePath = System.getenv("KEYSTORE_FILE")
-        if (!keystorePath.isNullOrBlank() && file(keystorePath).exists()) {
+        val rawKeystorePath = resolveSecret("KEYSTORE_FILE")
+        val keystoreFile = resolveKeystoreFile(rawKeystorePath)
+        if (keystoreFile != null && keystoreFile.exists()) {
             create("release") {
-                storeFile = file(keystorePath)
-                storePassword = System.getenv("KEYSTORE_PASSWORD")
-                keyAlias = System.getenv("KEY_ALIAS")
-                keyPassword = System.getenv("KEY_PASSWORD")
+                storeFile = keystoreFile
+                storePassword = resolveSecret("KEYSTORE_PASSWORD")
+                keyAlias = resolveSecret("KEY_ALIAS")
+                keyPassword = resolveSecret("KEY_PASSWORD")
             }
+        } else {
+            logger.warn("Release signing skipped: keystore not found at '${rawKeystorePath ?: "KEYSTORE_FILE not set"}'")
         }
     }
 
@@ -88,4 +120,21 @@ dependencies {
     androidTestImplementation(libs.androidx.junit)
     debugImplementation(libs.androidx.compose.ui.test.manifest)
     debugImplementation(libs.androidx.compose.ui.tooling)
+}
+
+val releaseApkProvider = layout.buildDirectory.file("outputs/apk/release/app-release.apk")
+
+tasks.matching { it.name == "assembleRelease" }.configureEach {
+    val apkFile = releaseApkProvider
+    doLast {
+        val apk = apkFile.get().asFile
+        if (apk.exists()) {
+            val digest = MessageDigest.getInstance("SHA-256").digest(apk.readBytes())
+            val sha256 = digest.joinToString(separator = "") { b -> "%02x".format(b) }
+            File(apk.parentFile, "${apk.name}.sha256").writeText("$sha256  ${apk.name}\n")
+            println("\n>>> Release SHA-256: $sha256\n")
+        } else {
+            println("\n>>> Warning: Signed app-release.apk not found. Check KEYSTORE_FILE in local.properties.\n")
+        }
+    }
 }
