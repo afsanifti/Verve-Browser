@@ -34,88 +34,39 @@ class GitHubReleaseUpdateRepository(
                 "Configure githubRepository (owner/repo) before checking for updates."
             }
 
-            val latestReleaseApi = "https://api.github.com/repos/$githubRepository/releases/latest"
-            val apiConnection = (URL(latestReleaseApi).openConnection() as HttpURLConnection).apply {
-                requestMethod = "GET"
-                connectTimeout = 12_000
-                readTimeout = 15_000
-                setRequestProperty("Accept", "application/vnd.github+json")
-                setRequestProperty("X-GitHub-Api-Version", "2022-11-28")
-                setRequestProperty("User-Agent", "VerveBrowser/${BuildConfig.VERSION_NAME}")
-            }
-
-            val releaseJson = try {
-                val code = apiConnection.responseCode
-                if (code == 404) {
-                    return@runCatching ReleaseCheckResult(
-                        availableUpdate = null,
-                        latestVersionName = null,
-                        latestReleaseNotes = null
-                    )
-                }
-                check(code in 200..299) { "GitHub Releases API returned HTTP $code" }
-                JSONObject(apiConnection.inputStream.bufferedReader().use { it.readText() })
-            } finally {
-                apiConnection.disconnect()
-            }
-
-            if (releaseJson.optBoolean("draft", false)) {
-                return@runCatching ReleaseCheckResult(
+            // Fetch update.json directly via GitHub's release asset redirect URL so
+            // update checks never hit the 60 req/hr unauthenticated REST API rate limit.
+            val latestManifestUrl =
+                "https://github.com/$githubRepository/releases/latest/download/update.json"
+            val manifestBody = fetchTextOrNullOnNotFound(latestManifestUrl)
+                ?: return@runCatching ReleaseCheckResult(
                     availableUpdate = null,
                     latestVersionName = null,
                     latestReleaseNotes = null
                 )
-            }
 
-            val assets = releaseJson.optJSONArray("assets")
-                ?: return@runCatching ReleaseCheckResult(
-                    availableUpdate = null,
-                    latestVersionName = null,
-                    latestReleaseNotes = releaseJson.optString("body").trim().ifBlank { null }
-                )
-
-            var manifestUrl: String? = null
-            val assetUrlByName = HashMap<String, String>()
-            val assetSizeByName = HashMap<String, Long>()
-
-            for (i in 0 until assets.length()) {
-                val asset = assets.getJSONObject(i)
-                val name = asset.optString("name")
-                val url = asset.optString("browser_download_url")
-                if (name.isNotBlank() && url.isNotBlank()) {
-                    assetUrlByName[name] = url
-                    assetSizeByName[name] = asset.optLong("size", 0L)
-                    if (name == "update.json") {
-                        manifestUrl = url
-                    }
-                }
-            }
-
-            val resolvedManifestUrl = manifestUrl
-                ?: return@runCatching ReleaseCheckResult(
-                    availableUpdate = null,
-                    latestVersionName = releaseJson.optString("tag_name").removePrefix("v").trim().ifBlank { null },
-                    latestReleaseNotes = releaseJson.optString("body").trim().ifBlank { null }
-                )
-
-            val manifestBody = fetchText(resolvedManifestUrl)
             val json = JSONObject(manifestBody)
 
             val remoteVersionCode = json.getInt("versionCode")
             val remoteVersionName = json.getString("versionName").trim()
             val apkAssetName = json.getString("apkAssetName").trim()
             val sha256 = json.getString("sha256").trim()
-            val githubReleaseBody = releaseJson.optString("body").trim()
-            val manifestReleaseNotes = json.optString("releaseNotes").trim()
-            val releaseNotes = githubReleaseBody.ifBlank { manifestReleaseNotes }
+            val releaseNotes = json.optString("releaseNotes").trim()
+            val apkSizeBytes = json.optLong("apkSizeBytes", 0L).coerceAtLeast(0L)
 
             check(remoteVersionCode > 0 && remoteVersionName.isNotEmpty() && sha256.length == 64) {
                 "Invalid update.json manifest fields"
             }
 
             val manifest = if (remoteVersionCode > currentVersionCode) {
-                val apkDownloadUrl = assetUrlByName[apkAssetName]
-                    ?: error("APK asset '$apkAssetName' listed in update.json was not found in release assets")
+                val tagName = if (remoteVersionName.startsWith("v")) {
+                    remoteVersionName
+                } else {
+                    "v$remoteVersionName"
+                }
+                val apkDownloadUrl = json.optString("apkDownloadUrl").trim().ifBlank {
+                    "https://github.com/$githubRepository/releases/download/$tagName/$apkAssetName"
+                }
 
                 AppUpdateManifest(
                     versionCode = remoteVersionCode,
@@ -124,7 +75,7 @@ class GitHubReleaseUpdateRepository(
                     sha256 = sha256,
                     releaseNotes = releaseNotes,
                     apkDownloadUrl = apkDownloadUrl,
-                    apkSizeBytes = assetSizeByName[apkAssetName] ?: 0L
+                    apkSizeBytes = apkSizeBytes
                 )
             } else {
                 null
@@ -205,17 +156,19 @@ class GitHubReleaseUpdateRepository(
         }
     }
 
-    private fun fetchText(url: String): String {
+    private fun fetchTextOrNullOnNotFound(url: String): String? {
         val conn = (URL(url).openConnection() as HttpURLConnection).apply {
             requestMethod = "GET"
             instanceFollowRedirects = true
             connectTimeout = 12_000
             readTimeout = 15_000
+            setRequestProperty("Accept", "application/json")
             setRequestProperty("User-Agent", "VerveBrowser/${BuildConfig.VERSION_NAME}")
         }
         return try {
             val code = conn.responseCode
-            check(code in 200..299) { "Failed to download manifest (HTTP $code)" }
+            if (code == 404) return null
+            check(code in 200..299) { "Update check failed (HTTP $code)" }
             conn.inputStream.bufferedReader().use { it.readText() }
         } finally {
             conn.disconnect()

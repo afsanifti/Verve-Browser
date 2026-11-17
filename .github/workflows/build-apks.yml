@@ -140,6 +140,8 @@ jobs:
 
       - name: Verify Signed APK & Generate update.json
         id: package
+        env:
+          REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
 
@@ -195,6 +197,12 @@ jobs:
             exit 1
           fi
 
+          APK_SIZE_BYTES=$(stat -c%s "${FINAL_APK}")
+          if [[ ! "${APK_SIZE_BYTES}" =~ ^[1-9][0-9]*$ ]]; then
+            echo "::error::Invalid APK file size: '${APK_SIZE_BYTES}'"
+            exit 1
+          fi
+
           SHA256_HASH=$(sha256sum "${FINAL_APK}" | awk '{print $1}')
           if [[ ! "${SHA256_HASH}" =~ ^[a-fA-F0-9]{64}$ ]]; then
             echo "::error::Invalid SHA-256 checksum: '${SHA256_HASH}'"
@@ -203,15 +211,16 @@ jobs:
 
           TAG_NAME="${{ steps.version.outputs.tag_name }}"
           RELEASE_TAG="${TAG_NAME:-v${ACTUAL_VERSION_NAME}}"
+          APK_DOWNLOAD_URL="https://github.com/${REPO}/releases/download/${RELEASE_TAG}/${APK_ASSET_NAME}"
 
           FILE_NOTES=""
           if [[ -f "release_notes.txt" ]]; then
-            FILE_NOTES=$(awk 'NF {p=1} p' release_notes.txt | tac | awk 'NF {p=1} p' | tac || true)
+            FILE_NOTES=$(tr -d '\r' < release_notes.txt | awk 'NF {p=1} p' | tac | awk 'NF {p=1} p' | tac || true)
           fi
 
           TAG_ANNOTATION=""
           if [[ -n "${TAG_NAME}" ]] && git rev-parse -q --verify "refs/tags/${TAG_NAME}" >/dev/null; then
-            RAW_ANNOTATION=$(git tag -l --format='%(contents)' "${TAG_NAME}" | sed '/^-----BEGIN PGP SIGNATURE-----/,$d' | awk 'NF {p=1} p' | tac | awk 'NF {p=1} p' | tac || true)
+            RAW_ANNOTATION=$(git tag -l --format='%(contents)' "${TAG_NAME}" | tr -d '\r' | sed '/^-----BEGIN PGP SIGNATURE-----/,$d' | awk 'NF {p=1} p' | tac | awk 'NF {p=1} p' | tac || true)
             if [[ -n "${RAW_ANNOTATION}" && ! "${RAW_ANNOTATION}" =~ ^(Release[[:space:]]+)?v?[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?$ ]]; then
               TAG_ANNOTATION="${RAW_ANNOTATION}"
             fi
@@ -244,12 +253,16 @@ jobs:
             --argjson versionCode "${ACTUAL_VERSION_CODE}" \
             --arg versionName "${ACTUAL_VERSION_NAME}" \
             --arg apkAssetName "${APK_ASSET_NAME}" \
+            --arg apkDownloadUrl "${APK_DOWNLOAD_URL}" \
+            --argjson apkSizeBytes "${APK_SIZE_BYTES}" \
             --arg sha256 "${SHA256_HASH}" \
             --arg releaseNotes "${RELEASE_NOTES}" \
             '{
               versionCode: $versionCode,
               versionName: $versionName,
               apkAssetName: $apkAssetName,
+              apkDownloadUrl: $apkDownloadUrl,
+              apkSizeBytes: $apkSizeBytes,
               sha256: $sha256,
               releaseNotes: $releaseNotes
             }' > "${MANIFEST_PATH}"
@@ -258,6 +271,8 @@ jobs:
             (.versionCode | type == "number" and . > 0) and
             (.versionName | type == "string" and length > 0) and
             (.apkAssetName | type == "string" and length > 0) and
+            (.apkDownloadUrl | type == "string" and startswith("https://")) and
+            (.apkSizeBytes | type == "number" and . > 0) and
             (.sha256 | type == "string" and test("^[a-fA-F0-9]{64}$")) and
             (.releaseNotes | type == "string" and length > 0)
           ' "${MANIFEST_PATH}" > /dev/null || {
@@ -340,49 +355,32 @@ jobs:
           VERIFY_DIR="${RUNNER_TEMP}/release-validation"
           mkdir -p "${VERIFY_DIR}"
 
-          API_URL="https://api.github.com/repos/${REPO}/releases/tags/${RELEASE_TAG}"
-          RELEASE_JSON="${VERIFY_DIR}/release.json"
+          LATEST_MANIFEST_URL="https://github.com/${REPO}/releases/latest/download/update.json"
+          DOWNLOADED_MANIFEST="${VERIFY_DIR}/update.json"
 
           FETCHED=false
           for attempt in 1 2 3; do
-            HTTP_CODE=$(curl -sS -L -w "%{http_code}" -o "${RELEASE_JSON}" \
-              -H "Accept: application/vnd.github+json" \
-              "${API_URL}")
-            if [[ "${HTTP_CODE}" == "200" ]]; then
+            HTTP_CODE=$(curl -sS -L -w "%{http_code}" -o "${DOWNLOADED_MANIFEST}" "${LATEST_MANIFEST_URL}")
+            if [[ "${HTTP_CODE}" == "200" && -s "${DOWNLOADED_MANIFEST}" ]]; then
               FETCHED=true
               break
             fi
-            echo "Attempt ${attempt}: API returned HTTP ${HTTP_CODE}, retrying in 4s..."
+            echo "Attempt ${attempt}: CDN manifest returned HTTP ${HTTP_CODE}, retrying in 4s..."
             sleep 4
           done
 
           if [[ "${FETCHED}" != "true" ]]; then
-            echo "::error::Release '${RELEASE_TAG}' not found or not publicly accessible (HTTP ${HTTP_CODE})."
+            echo "::error::Public CDN manifest '${LATEST_MANIFEST_URL}' unreachable (HTTP ${HTTP_CODE})."
             exit 1
           fi
 
-          if [[ "$(jq -r '.draft' "${RELEASE_JSON}")" != "false" ]]; then
-            echo "::error::Release '${RELEASE_TAG}' is marked as draft."
+          APK_DOWNLOAD_URL=$(jq -r '.apkDownloadUrl' "${DOWNLOADED_MANIFEST}")
+          if [[ -z "${APK_DOWNLOAD_URL}" || "${APK_DOWNLOAD_URL}" == "null" ]]; then
+            echo "::error::Missing apkDownloadUrl in update.json."
             exit 1
           fi
 
-          APK_DOWNLOAD_URL=$(jq -r --arg name "${EXPECTED_APK_ASSET}" '.assets[] | select(.name == $name) | .browser_download_url' "${RELEASE_JSON}")
-          MANIFEST_DOWNLOAD_URL=$(jq -r '.assets[] | select(.name == "update.json") | .browser_download_url' "${RELEASE_JSON}")
-
-          if [[ -z "${APK_DOWNLOAD_URL}" || -z "${MANIFEST_DOWNLOAD_URL}" ]]; then
-            echo "::error::Missing required release assets (${EXPECTED_APK_ASSET} or update.json)."
-            exit 1
-          fi
-
-          DOWNLOADED_MANIFEST="${VERIFY_DIR}/update.json"
           DOWNLOADED_APK="${VERIFY_DIR}/${EXPECTED_APK_ASSET}"
-
-          MANIFEST_HTTP=$(curl -sS -L -w "%{http_code}" -o "${DOWNLOADED_MANIFEST}" "${MANIFEST_DOWNLOAD_URL}")
-          if [[ "${MANIFEST_HTTP}" != "200" || ! -s "${DOWNLOADED_MANIFEST}" ]]; then
-            echo "::error::Public download of update.json failed (HTTP ${MANIFEST_HTTP})."
-            exit 1
-          fi
-
           APK_HTTP=$(curl -sS -L -w "%{http_code}" -o "${DOWNLOADED_APK}" "${APK_DOWNLOAD_URL}")
           if [[ "${APK_HTTP}" != "200" || ! -s "${DOWNLOADED_APK}" ]]; then
             echo "::error::Public download of ${EXPECTED_APK_ASSET} failed (HTTP ${APK_HTTP})."
@@ -405,6 +403,13 @@ jobs:
           MANIFEST_VERSION_CODE=$(jq -r '.versionCode' "${DOWNLOADED_MANIFEST}")
           if [[ "${APK_VERSION_CODE}" != "${MANIFEST_VERSION_CODE}" ]]; then
             echo "::error::APK versionCode (${APK_VERSION_CODE}) != update.json (${MANIFEST_VERSION_CODE})."
+            exit 1
+          fi
+
+          ACTUAL_APK_SIZE=$(stat -c%s "${DOWNLOADED_APK}")
+          MANIFEST_APK_SIZE=$(jq -r '.apkSizeBytes' "${DOWNLOADED_MANIFEST}")
+          if [[ "${ACTUAL_APK_SIZE}" != "${MANIFEST_APK_SIZE}" ]]; then
+            echo "::error::APK size (${ACTUAL_APK_SIZE}) != update.json (${MANIFEST_APK_SIZE})."
             exit 1
           fi
 
