@@ -40,10 +40,69 @@ internal class EdgeProbeScheduler(
             if (isDisposed || !canRunProbe()) return@extractEdgeProbe
             viewModel.updateTopRegionColor(tabId, probeResult.topColor)
             viewModel.updateBottomRegionColor(tabId, probeResult.bottomColor)
-            if (viewModel.uiState.value.activeTabId == tabId) {
-                viewModel.updateHasFixedBottomBar(probeResult.hasFixedBottomBar)
-            }
             bottomCoordinator.onJsScrollMetricsUpdated(probeResult.scrollMetrics)
+
+            if (viewModel.uiState.value.activeTabId != tabId) return@extractEdgeProbe
+
+            when {
+                probeResult.hasFixedBottomBar -> {
+                    bottomCoordinator.setFixedFrameBarLatched(false)
+                    viewModel.updateHasFixedBottomBar(true)
+                }
+                bottomCoordinator.isFixedFrameBarLatched() &&
+                        bottomCoordinator.isCandidateFixedFrameViewport() -> {
+                    viewModel.updateHasFixedBottomBar(true)
+                }
+                bottomCoordinator.isCandidateFixedFrameViewport() -> {
+                    probeFixedFrameBottomContent()
+                }
+                else -> {
+                    bottomCoordinator.setFixedFrameBarLatched(false)
+                    viewModel.updateHasFixedBottomBar(false)
+                }
+            }
+        }
+    }
+
+    private fun probeFixedFrameBottomContent() {
+        if (isDisposed || !canRunProbe()) return
+        val detectBottomFooterJs = """
+            (() => {
+                const vh = window.innerHeight || document.documentElement.clientHeight || 0;
+                const vw = window.innerWidth || document.documentElement.clientWidth || 0;
+                if (vh <= 0 || vw <= 0) return '0';
+                const minTop = vh * 0.50;
+                const minBottom = vh - 56;
+                const candidates = document.querySelectorAll(
+                    'footer, nav, [role="contentinfo"], [role="navigation"], a, button, input, select, [role="button"], [role="link"], div, ul, p, span'
+                );
+                const limit = Math.min(candidates.length, 450);
+                for (let i = 0; i < limit; i++) {
+                    const el = candidates[i];
+                    const rect = el.getBoundingClientRect();
+                    if (rect.width < 12 || rect.height < 8) continue;
+                    if (rect.top < minTop || rect.bottom < minBottom || rect.top >= vh) continue;
+                    if (rect.right <= 0 || rect.left >= vw) continue;
+                    const style = window.getComputedStyle(el);
+                    if (style.display === 'none' || style.visibility === 'hidden' || parseFloat(style.opacity || '1') <= 0.05) {
+                        continue;
+                    }
+                    const hasText = (el.innerText || '').trim().length > 0;
+                    const isInteractive = el.matches('a,button,input,select,[role="button"],[role="link"]') ||
+                        el.querySelector('a,button,input,select,[role="button"],[role="link"],svg') !== null;
+                    if (hasText || isInteractive) return '1';
+                }
+                return '0';
+            })();
+        """.trimIndent()
+
+        webView.evaluateJavascript(detectBottomFooterJs) { rawResult ->
+            if (isDisposed || !canRunProbe()) return@evaluateJavascript
+            if (viewModel.uiState.value.activeTabId != tabId) return@evaluateJavascript
+            val hasBottomFooter = rawResult?.trim('"') == "1" &&
+                    bottomCoordinator.isCandidateFixedFrameViewport()
+            bottomCoordinator.setFixedFrameBarLatched(hasBottomFooter)
+            viewModel.updateHasFixedBottomBar(hasBottomFooter)
         }
     }
 

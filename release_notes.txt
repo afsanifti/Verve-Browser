@@ -1,8 +1,26 @@
-## New Features
-- **Expressive Bottom Bar Tab Swiping:** Swipe left or right on the bottom search pill to switch between open tabs with smooth Material 3 spring compression on the side buttons.
-- **CMF Theme:** Added a new CMF theme option to customize Verve's appearance.
-- **Redesigned App Update Experience:** Streamlined the update popup sheet and added a persistent What's new section in About Verve that stays visible after updating.
+# Verve Browser — Release Notes (November 18, 2026)
 
-## Improvements & Fixes
-- **Tab Scrolling & Thumbnails:** Updated the tab switcher scrolling mechanics and improved tab thumbnail rendering for smoother motion and cleaner page previews.
-- **Incognito Theme Switching:** Fixed an issue where toggling Incognito mode did not properly update the active theme.
+## What's New
+
+### 1. Chrome-Style 1:1 Swipe-to-Switch Tabs
+- **Finger-Tracking Carousel:** Swiping left or right on the bottom search pill moves the active webpage 1:1 with your thumb while pulling the adjacent tab's preview in across a crisp 12dp dark gutter.
+- **Expanded & Collapsed Support:** Works seamlessly in both the full toolbar and the collapsed mini-pill state.
+- **Themed Fallback Cards:** Displays site titles and icons for New Tabs, Incognito tabs, or pages without a captured snapshot yet.
+
+### 2. 2-Column Grid View in Quick Tabs
+- **Layout Switcher:** Added a top-bar toggle in Quick Tabs to switch between the stacked card carousel and a Chrome-style 2-column grid.
+- **Refined Grid Cards:** Concentric rounded cards feature site monogram/icon badges, tab stack labels, one-tap close buttons, and primary highlighting for the active tab.
+- **Smooth Navigation:** Auto-scrolls to keep the active tab visible and animates cleanly between grid and carousel views.
+
+## Improvements & Polish
+
+### 3. Bottom Bar on Non-Scrollable Pages
+- **Smart Accessibility:** Keeps the floating bottom toolbar accessible on short or non-scrollable pages so it never gets stuck collapsed.
+- **Manual Gestures Preserved:** You can still swipe vertically on the pill to manually collapse or expand it on demand.
+
+### 4. Smoother, Bounce-Free Motion
+- **Critically Damped Curves:** Replaced rubbery springs with smooth, zero-overshoot motion across the Quick Tabs stack, bottom pill transitions, and lateral tab carousel.
+- **Refined Fling Physics:** Tuned horizontal velocity handoffs in Quick Tabs so cards glide and settle cleanly into focus.
+
+### 5. Zero-Stutter Tab Switching
+- **Snapshot-First Transitions:** Animates cached tab snapshots throughout bottom-bar drags and release glides, swapping in the live `WebView` only after settling to eliminate frame drops.

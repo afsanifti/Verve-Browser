@@ -38,6 +38,10 @@ internal fun BrowserSearchOverlay(
     tabWebViewPool: TabWebViewPool,
     thumbnailCache: TabThumbnailCache,
     viewModel: BrowserViewModel,
+    onSwipeStarted: () -> Unit = {},
+    onSwipeFractionChanged: (Float) -> Unit = {},
+    onSwipeCommitted: (targetTabId: String, direction: Int, currentFraction: Float) -> Unit = { _, _, _ -> },
+    onSwipeCancelled: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val focusManager = LocalFocusManager.current
@@ -129,30 +133,26 @@ internal fun BrowserSearchOverlay(
                 onCollapsedChange = { collapsed ->
                     viewModel.setToolbarCollapsed(collapsed = collapsed, isManual = true)
                 },
-                onSwipeToLeftTab = {
-                    leftTab?.let { target ->
-                        webViewRef?.let { activeView ->
-                            thumbnailCache.captureFromWebView(
-                                tabId = uiState.activeTabId,
-                                webView = activeView,
-                                isIncognito = uiState.isIncognito
-                            )
-                        }
-                        viewModel.switchToTab(target.id)
+                onSwipeStarted = {
+                    webViewRef?.let { activeView ->
+                        thumbnailCache.captureFromWebView(
+                            tabId = uiState.activeTabId,
+                            webView = activeView,
+                            isIncognito = uiState.isIncognito
+                        )
+                    }
+                    onSwipeStarted()
+                },
+                onSwipeFractionChanged = onSwipeFractionChanged,
+                onSwipeCommitted = { direction, currentFraction ->
+                    val target = if (direction > 0) leftTab else rightTab
+                    if (target != null) {
+                        onSwipeCommitted(target.id, direction, currentFraction)
+                    } else {
+                        onSwipeCancelled()
                     }
                 },
-                onSwipeToRightTab = {
-                    rightTab?.let { target ->
-                        webViewRef?.let { activeView ->
-                            thumbnailCache.captureFromWebView(
-                                tabId = uiState.activeTabId,
-                                webView = activeView,
-                                isIncognito = uiState.isIncognito
-                            )
-                        }
-                        viewModel.switchToTab(target.id)
-                    }
-                },
+                onSwipeCancelled = onSwipeCancelled,
                 onToggleIncognito = viewModel::toggleIncognito,
                 onRefreshClick = {
                     webViewRef?.reload()

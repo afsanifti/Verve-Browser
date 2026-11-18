@@ -1,5 +1,12 @@
 package com.verve.browser.presentation.browser.components
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.WindowInsets
@@ -17,10 +24,13 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.verve.browser.presentation.browser.BrowserTab
@@ -42,18 +52,21 @@ fun QuickTabsScreen(
     onSelectTab: (String) -> Unit,
     onCloseTab: (String) -> Unit,
     onNewTabClick: () -> Unit,
+    modifier: Modifier = Modifier,
     onCreateTabStack: (List<String>, String) -> Unit = { _, _ -> },
     onAddTabToStack: (String, String) -> Unit = { _, _ -> },
     onRemoveTabFromStack: (String) -> Unit = {},
     onToggleStackCollapsed: (String) -> Unit = {},
     onHistoryClick: () -> Unit = {},
     onLayoutToggleClick: () -> Unit = {},
-    onSettingsClick: () -> Unit = {},
-    modifier: Modifier = Modifier
+    onSettingsClick: () -> Unit = {}
 ) {
+    val haptic = LocalHapticFeedback.current
+
     // Always use the system wallpaper/theme engine rather than the active webpage's seed color
     VerveBrowserTheme(siteSeedColor = null) {
         var isStackSheetOpen by remember { mutableStateOf(false) }
+        var isGridView by rememberSaveable { mutableStateOf(false) }
         var focusedTabId by remember { mutableStateOf(activeTabId) }
 
         // Place newest tabs at index 0 (far right / top of the stack) and older tabs to the left
@@ -81,6 +94,18 @@ fun QuickTabsScreen(
             focusedTab?.stackId?.let { stackId -> tabStacks.firstOrNull { it.id == stackId } }
         }
 
+        val handleCloseTab: (String) -> Unit = { tabId ->
+            val closingIndex = stackTabs.indexOfFirst { it.id == tabId }
+            if (closingIndex != -1 && tabId == focusedTabId && stackTabs.size > 1) {
+                val nextFocusTab = stackTabs.getOrNull(closingIndex + 1)
+                    ?: stackTabs.getOrNull(closingIndex - 1)
+                if (nextFocusTab != null) {
+                    focusedTabId = nextFocusTab.id
+                }
+            }
+            onCloseTab(tabId)
+        }
+
         val topSafeInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Top)
         val bottomNavInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Bottom)
 
@@ -95,9 +120,14 @@ fun QuickTabsScreen(
             ) {
                 QuickTabsTopBar(
                     stackCount = tabStacks.size,
+                    isGridView = isGridView,
                     onBackClick = onBackClick,
                     onHistoryClick = onHistoryClick,
-                    onLayoutToggleClick = onLayoutToggleClick
+                    onLayoutToggleClick = {
+                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        isGridView = !isGridView
+                        onLayoutToggleClick()
+                    }
                 )
 
                 BoxWithConstraints(
@@ -126,34 +156,51 @@ fun QuickTabsScreen(
                         cardWidth = (cardHeight * ReferenceCardAspectRatio).coerceAtLeast(160.dp)
                     }
 
-                    QuickTabsCardStack(
-                        tabs = orderedTabs,
-                        allTabsInOrder = stackTabs,
-                        activeStack = focusedStack,
-                        thumbnailProvider = thumbnailProvider,
-                        cardWidth = cardWidth,
-                        cardHeight = cardHeight,
-                        onFocusTab = { targetId -> focusedTabId = targetId },
-                        onOpenFocusedTab = { tabId ->
-                            if (tabId == activeTabId) {
-                                onBackClick()
-                            } else {
-                                onSelectTab(tabId)
-                            }
+                    AnimatedContent(
+                        targetState = isGridView,
+                        transitionSpec = {
+                            (fadeIn(tween(200, easing = FastOutSlowInEasing)) +
+                                    scaleIn(initialScale = 0.96f, animationSpec = tween(200, easing = FastOutSlowInEasing)))
+                                .togetherWith(fadeOut(tween(150, easing = FastOutSlowInEasing)))
                         },
-                        onCloseTab = { tabId ->
-                            val closingIndex = stackTabs.indexOfFirst { it.id == tabId }
-                            if (closingIndex != -1 && tabId == focusedTabId && stackTabs.size > 1) {
-                                // Focus the next card in the stack, or the previous card if closing the leftmost one
-                                val nextFocusTab = stackTabs.getOrNull(closingIndex + 1)
-                                    ?: stackTabs.getOrNull(closingIndex - 1)
-                                if (nextFocusTab != null) {
-                                    focusedTabId = nextFocusTab.id
-                                }
-                            }
-                            onCloseTab(tabId)
+                        label = "quickTabsLayoutMode",
+                        modifier = Modifier.fillMaxSize()
+                    ) { showGrid ->
+                        if (showGrid) {
+                            QuickTabsGridView(
+                                tabs = tabs,
+                                tabStacks = tabStacks,
+                                activeTabId = activeTabId,
+                                thumbnailProvider = thumbnailProvider,
+                                onSelectTab = { tabId ->
+                                    if (tabId == activeTabId) {
+                                        onBackClick()
+                                    } else {
+                                        onSelectTab(tabId)
+                                    }
+                                },
+                                onCloseTab = handleCloseTab
+                            )
+                        } else {
+                            QuickTabsCardStack(
+                                tabs = orderedTabs,
+                                allTabsInOrder = stackTabs,
+                                activeStack = focusedStack,
+                                thumbnailProvider = thumbnailProvider,
+                                cardWidth = cardWidth,
+                                cardHeight = cardHeight,
+                                onFocusTab = { targetId -> focusedTabId = targetId },
+                                onOpenFocusedTab = { tabId ->
+                                    if (tabId == activeTabId) {
+                                        onBackClick()
+                                    } else {
+                                        onSelectTab(tabId)
+                                    }
+                                },
+                                onCloseTab = handleCloseTab
+                            )
                         }
-                    )
+                    }
                 }
 
                 QuickTabsBottomBar(

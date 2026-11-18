@@ -44,15 +44,15 @@ import kotlin.math.floor
 import kotlin.math.roundToInt
 import kotlinx.coroutines.launch
 
-// Fluid, weighty spring with a gentle rebound settle
-private val FluidStackSpring = spring<Float>(
-    dampingRatio = 0.72f,
-    stiffness = 210f
+// Critically damped curves so cards glide smoothly into place without bouncing
+private val SmoothStackSpring = spring<Float>(
+    dampingRatio = 0.98f,
+    stiffness = 310f
 )
 
-private val FluidBiasDpSpring = spring<Dp>(
-    dampingRatio = 0.76f,
-    stiffness = 200f
+private val SmoothBiasDpSpring = spring<Dp>(
+    dampingRatio = 1.0f,
+    stiffness = 310f
 )
 
 private val DismissExitSpec = tween<Float>(
@@ -140,14 +140,14 @@ internal fun QuickTabsCardStack(
             allTabsInOrder.firstOrNull()?.let { newestTab ->
                 currentOnFocusTab(newestTab.id)
             }
-            scrollPosition.animateTo(0f, FluidStackSpring)
+            scrollPosition.animateTo(0f, SmoothStackSpring)
             return@LaunchedEffect
         }
 
         val targetIdx = allTabsInOrder.indexOfFirst { it.id == focusedId }.coerceAtLeast(0)
         if (closingTabId == null && !scrollPosition.isRunning && nearestIndex != targetIdx) {
             lastHapticIndex = targetIdx
-            scrollPosition.animateTo(targetIdx.toFloat(), FluidStackSpring)
+            scrollPosition.animateTo(targetIdx.toFloat(), SmoothStackSpring)
         }
     }
 
@@ -173,8 +173,8 @@ internal fun QuickTabsCardStack(
     }
     val animatedBiasX by animateDpAsState(
         targetValue = targetBiasX,
-        animationSpec = FluidBiasDpSpring,
-        label = "fluidStackBiasX"
+        animationSpec = SmoothBiasDpSpring,
+        label = "smoothStackBiasX"
     )
     val animatedBiasPx = with(density) { animatedBiasX.toPx() }
 
@@ -277,14 +277,14 @@ internal fun QuickTabsCardStack(
                             }
                         } else {
                             coroutineScope.launch {
-                                dismissOffsetY.animateTo(0f, FluidStackSpring)
+                                dismissOffsetY.animateTo(0f, SmoothStackSpring)
                             }
                         }
                     } else if (axis == DragAxis.Horizontal) {
                         val pos = scrollPosition.value
                         val indexVelocity = velocity.x / dragSensitivityPx
                         val dragDelta = pos - dragStartPos
-                        val projected = pos + indexVelocity * 0.28f
+                        val projected = pos + indexVelocity * 0.22f
 
                         val targetIdx = when {
                             abs(indexVelocity) > 0.85f -> projected.roundToInt()
@@ -296,8 +296,8 @@ internal fun QuickTabsCardStack(
                         coroutineScope.launch {
                             scrollPosition.animateTo(
                                 targetValue = targetIdx.toFloat(),
-                                initialVelocity = indexVelocity * 1.15f,
-                                animationSpec = FluidStackSpring
+                                initialVelocity = indexVelocity.coerceIn(-4.5f, 4.5f) * 0.65f,
+                                animationSpec = SmoothStackSpring
                             )
                         }
                     }
@@ -394,7 +394,7 @@ internal fun QuickTabsCardStack(
                             currentOnOpenFocusedTab(tab.id)
                         } else {
                             coroutineScope.launch {
-                                scrollPosition.animateTo(index.toFloat(), FluidStackSpring)
+                                scrollPosition.animateTo(index.toFloat(), SmoothStackSpring)
                             }
                         }
                     },
@@ -419,7 +419,7 @@ internal fun QuickTabsCardStack(
                         } else {
                             haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                             coroutineScope.launch {
-                                scrollPosition.animateTo(index.toFloat(), FluidStackSpring)
+                                scrollPosition.animateTo(index.toFloat(), SmoothStackSpring)
                             }
                         }
                     }

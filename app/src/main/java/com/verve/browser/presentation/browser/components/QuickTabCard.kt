@@ -3,20 +3,29 @@ package com.verve.browser.presentation.browser.components
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material3.CircularProgressIndicator
@@ -25,12 +34,18 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -38,7 +53,9 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.lerp
 import androidx.compose.ui.unit.sp
+import com.verve.browser.R
 import com.verve.browser.presentation.browser.BrowserTab
+import com.verve.browser.presentation.browser.TabStack
 import com.verve.browser.presentation.browser.components.searchpill.extractDisplayDomain
 
 @Composable
@@ -137,6 +154,198 @@ internal fun IosStackedTabCard(
                     modifier = Modifier
                         .fillMaxSize()
                         .background(MaterialTheme.colorScheme.scrim.copy(alpha = dimOverlayAlpha))
+                )
+            }
+        }
+    }
+}
+
+@Composable
+internal fun QuickTabsGridView(
+    tabs: List<BrowserTab>,
+    tabStacks: List<TabStack>,
+    activeTabId: String,
+    thumbnailProvider: (String) -> ImageBitmap?,
+    onSelectTab: (String) -> Unit,
+    onCloseTab: (String) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val haptic = LocalHapticFeedback.current
+    val gridState = rememberLazyGridState()
+    val stacksById = remember(tabStacks) { tabStacks.associateBy { it.id } }
+
+    LaunchedEffect(Unit) {
+        val activeIdx = tabs.indexOfFirst { it.id == activeTabId }
+        if (activeIdx > 1) {
+            gridState.scrollToItem(activeIdx)
+        }
+    }
+
+    LazyVerticalGrid(
+        columns = GridCells.Fixed(2),
+        state = gridState,
+        contentPadding = PaddingValues(top = 8.dp, bottom = 16.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+        modifier = modifier.fillMaxSize()
+    ) {
+        items(
+            items = tabs,
+            key = { it.id }
+        ) { tab ->
+            val stack = tab.stackId?.let { stacksById[it] }
+            ChromeGridTabCard(
+                tab = tab,
+                stackTitle = stack?.title,
+                isActive = tab.id == activeTabId,
+                thumbnail = thumbnailProvider(tab.id),
+                onClick = { onSelectTab(tab.id) },
+                onCloseClick = {
+                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                    onCloseTab(tab.id)
+                },
+                modifier = Modifier.animateItem()
+            )
+        }
+    }
+}
+
+@Composable
+internal fun ChromeGridTabCard(
+    tab: BrowserTab,
+    stackTitle: String?,
+    isActive: Boolean,
+    thumbnail: ImageBitmap?,
+    onClick: () -> Unit,
+    onCloseClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val frameColor = if (isActive) {
+        MaterialTheme.colorScheme.primaryContainer
+    } else {
+        MaterialTheme.colorScheme.surfaceContainerHighest
+    }
+    val headerContentColor = if (isActive) {
+        MaterialTheme.colorScheme.onPrimaryContainer
+    } else {
+        MaterialTheme.colorScheme.onSurface
+    }
+    val borderStroke = if (isActive) {
+        BorderStroke(2.dp, MaterialTheme.colorScheme.primary)
+    } else {
+        BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f))
+    }
+
+    val titleLabel = remember(tab.title, tab.url, tab.isIncognito) {
+        tab.title.ifBlank { resolveTabChipLabel(tab) }
+    }
+    val siteInitial = remember(tab.url, tab.title) {
+        val domain = extractDisplayDomain(tab.url)
+        val source = domain.ifBlank { tab.title }.trim()
+        source.firstOrNull { it.isLetterOrDigit() }?.uppercaseChar()?.toString() ?: "V"
+    }
+
+    Surface(
+        onClick = onClick,
+        modifier = modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(20.dp),
+        color = frameColor,
+        border = borderStroke,
+        shadowElevation = if (isActive) 4.dp else 1.dp
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 5.dp, end = 5.dp, bottom = 5.dp)
+        ) {
+            // Compact Chrome-style card header: site badge + title + close button
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(38.dp)
+                    .padding(start = 7.dp, end = 2.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(20.dp)
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(
+                            if (tab.isIncognito) {
+                                MaterialTheme.colorScheme.secondaryContainer
+                            } else {
+                                MaterialTheme.colorScheme.surfaceContainerLowest
+                            }
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (tab.isIncognito) {
+                        Icon(
+                            painter = painterResource(id = R.drawable.ic_eyes_closed),
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                            modifier = Modifier.size(13.dp)
+                        )
+                    } else if (tab.url.isBlank()) {
+                        Icon(
+                            imageVector = Icons.Rounded.Search,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.size(13.dp)
+                        )
+                    } else {
+                        Text(
+                            text = siteInitial,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.width(8.dp))
+
+                Text(
+                    text = if (!stackTitle.isNullOrBlank()) "$stackTitle · $titleLabel" else titleLabel,
+                    color = headerContentColor,
+                    style = MaterialTheme.typography.labelLarge.copy(
+                        fontSize = 13.sp,
+                        fontWeight = if (isActive) FontWeight.SemiBold else FontWeight.Medium
+                    ),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f)
+                )
+
+                Box(
+                    modifier = Modifier
+                        .size(30.dp)
+                        .clip(CircleShape)
+                        .clickable(onClick = onCloseClick),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Close,
+                        contentDescription = "Close tab",
+                        tint = headerContentColor.copy(alpha = 0.85f),
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
+            }
+
+            // Concentric inner webpage preview container
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .aspectRatio(0.75f)
+                    .clip(RoundedCornerShape(15.dp))
+                    .background(resolveCardSurfaceColor(tab))
+            ) {
+                TabCardThumbnailContent(
+                    tab = tab,
+                    thumbnail = thumbnail,
+                    modifier = Modifier.fillMaxSize()
                 )
             }
         }

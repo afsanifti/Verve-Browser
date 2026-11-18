@@ -5,6 +5,8 @@ import android.os.Build
 import android.webkit.WebView
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -42,7 +44,19 @@ import com.verve.browser.presentation.theme.VerveBrowserTheme
 import com.verve.browser.presentation.update.AppUpdateController
 import com.verve.browser.presentation.update.AppUpdateSheet
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlin.time.Duration.Companion.milliseconds
+
+// Critically damped springs so tab-switch slides settle smoothly without bouncing
+private val CarouselCommitSpring = spring<Float>(
+    dampingRatio = 0.98f,
+    stiffness = 440f
+)
+
+private val CarouselCancelSpring = spring<Float>(
+    dampingRatio = 0.98f,
+    stiffness = 380f
+)
 
 @Composable
 fun BrowserScreen(
@@ -54,6 +68,7 @@ fun BrowserScreen(
     val uiState: BrowserUiState by viewModel.uiState.collectAsState()
     var webViewRef by remember { mutableStateOf<WebView?>(null) }
     var isSettingsOpen by remember { mutableStateOf(false) }
+    val carouselOffsetFraction = remember { Animatable(0f) }
 
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -69,7 +84,6 @@ fun BrowserScreen(
         }
     }
 
-    // Remove stale thumbnail files for tabs that were closed in prior sessions
     LaunchedEffect(Unit) {
         thumbnailCache.pruneOrphans(uiState.tabs.map { it.id }.toSet())
     }
@@ -90,7 +104,6 @@ fun BrowserScreen(
         }
     }
 
-    // Request notification permission on Android 13+ when opening the app
     LaunchedEffect(Unit) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
             !UpdateNotificationHelper.hasNotificationPermission(context)
@@ -106,7 +119,6 @@ fun BrowserScreen(
     val latestIsTabSwitcherOpen by rememberUpdatedState(uiState.isTabSwitcherOpen)
     val latestIsSettingsOpen by rememberUpdatedState(isSettingsOpen)
 
-    // Check for updates on foreground and snapshot active tab thumbnail when backgrounding
     DisposableEffect(lifecycleOwner, updateController) {
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
@@ -137,7 +149,6 @@ fun BrowserScreen(
         }
     }
 
-    // Open modal sheet immediately when user taps the system update notification
     LaunchedEffect(openUpdateSheetRequested) {
         if (openUpdateSheetRequested) {
             isSettingsOpen = false
@@ -170,6 +181,12 @@ fun BrowserScreen(
         }
     }
 
+    LaunchedEffect(uiState.isTabSwitcherOpen, isSettingsOpen) {
+        if (uiState.isTabSwitcherOpen || isSettingsOpen) {
+            carouselOffsetFraction.snapTo(0f)
+        }
+    }
+
     LaunchedEffect(uiState.activeTabId, uiState.currentUrl) {
         if (uiState.currentUrl.isNotEmpty()) {
             delay(2500.milliseconds)
@@ -177,7 +194,6 @@ fun BrowserScreen(
         }
     }
 
-    // Capture fresh thumbnail only when actively viewing the webpage (never inside QuickTabs or Settings)
     LaunchedEffect(
         uiState.activeTabId,
         uiState.currentUrl,
@@ -228,7 +244,7 @@ fun BrowserScreen(
             .fillMaxSize()
             .background(defaultRegionColor)
     ) {
-        // LAYER 1: Webpage Viewport
+        // LAYER 1: Webpage Viewport with Chrome-style 1:1 Lateral Tab Carousel
         BrowserWebViewport(
             uiState = uiState,
             isOnWebPage = isOnWebPage,
@@ -237,7 +253,8 @@ fun BrowserScreen(
             viewModel = viewModel,
             tabWebViewPool = tabWebViewPool,
             thumbnailCache = thumbnailCache,
-            onWebViewCreated = { webViewRef = it }
+            onWebViewCreated = { webViewRef = it },
+            carouselOffsetFraction = carouselOffsetFraction.value
         )
 
         // LAYER 2A: Independent Adaptive Top Region (status bar + display cutout)
@@ -262,7 +279,32 @@ fun BrowserScreen(
             webViewRef = webViewRef,
             tabWebViewPool = tabWebViewPool,
             thumbnailCache = thumbnailCache,
-            viewModel = viewModel
+            viewModel = viewModel,
+            onSwipeStarted = {
+                scope.launch { carouselOffsetFraction.stop() }
+            },
+            onSwipeFractionChanged = { fraction ->
+                scope.launch { carouselOffsetFraction.snapTo(fraction) }
+            },
+            onSwipeCommitted = { targetTabId, direction, currentFraction ->
+                scope.launch {
+                    carouselOffsetFraction.snapTo(currentFraction)
+                    carouselOffsetFraction.animateTo(
+                        targetValue = direction.toFloat(),
+                        animationSpec = CarouselCommitSpring
+                    )
+                    viewModel.switchToTab(targetTabId)
+                    carouselOffsetFraction.snapTo(0f)
+                }
+            },
+            onSwipeCancelled = {
+                scope.launch {
+                    carouselOffsetFraction.animateTo(
+                        targetValue = 0f,
+                        animationSpec = CarouselCancelSpring
+                    )
+                }
+            }
         )
 
         // LAYER 4: Dedicated Card-Based Quick Tabs Switcher

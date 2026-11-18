@@ -14,6 +14,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.GridView
 import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.Layers
 import androidx.compose.material.icons.rounded.Settings
@@ -29,11 +30,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 
 @Composable
 internal fun QuickTabsTopBar(
     stackCount: Int,
+    isGridView: Boolean,
     onBackClick: () -> Unit,
     onHistoryClick: () -> Unit,
     onLayoutToggleClick: () -> Unit,
@@ -79,9 +80,13 @@ internal fun QuickTabsTopBar(
 
         IconButton(onClick = onLayoutToggleClick) {
             Icon(
-                imageVector = Icons.Rounded.ViewCarousel,
-                contentDescription = "Tab layout",
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                imageVector = if (isGridView) Icons.Rounded.ViewCarousel else Icons.Rounded.GridView,
+                contentDescription = if (isGridView) "Switch to carousel view" else "Switch to grid view",
+                tint = if (isGridView) {
+                    MaterialTheme.colorScheme.primary
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                },
                 modifier = Modifier.size(24.dp)
             )
         }

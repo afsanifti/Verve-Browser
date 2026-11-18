@@ -16,18 +16,40 @@ internal class DocumentBottomScrollCoordinator(
     private val approachZonePx = (96f * density).coerceAtLeast(1f)
     private val lookaheadZonePx = (220f * density).roundToInt()
     private val minScrollableRangePx = (16f * density).roundToInt()
+    private val fixedFrameCurtainAllowancePx = (144f * density).roundToInt()
 
     private var lastReportedProgress: Float = 0f
     private var lastJsScrollMetrics: WebScrollMetrics? = null
     @Volatile
     private var inBottomLookahead: Boolean = false
+    @Volatile
+    private var latchedFixedFrameBar: Boolean = false
 
     fun isInBottomLookaheadZone(): Boolean = inBottomLookahead
+
+    fun isFixedFrameBarLatched(): Boolean = latchedFixedFrameBar
+
+    fun setFixedFrameBarLatched(latched: Boolean) {
+        latchedFixedFrameBar = latched
+    }
+
+    fun isCandidateFixedFrameViewport(): Boolean {
+        val viewportHeightPx = webView.height
+        if (viewportHeightPx <= 0) return false
+        val totalContentHeightPx = computeTotalContentHeightPx()
+        val thresholdPx = if (latchedFixedFrameBar) {
+            viewportHeightPx + fixedFrameCurtainAllowancePx + minScrollableRangePx
+        } else {
+            viewportHeightPx + minScrollableRangePx
+        }
+        return totalContentHeightPx <= thresholdPx
+    }
 
     fun resetForNavigation() {
         lastReportedProgress = 0f
         lastJsScrollMetrics = null
         inBottomLookahead = false
+        latchedFixedFrameBar = false
         if (viewModel.uiState.value.activeTabId == tabId) {
             viewModel.updateBottomCurtainProgress(0f)
             viewModel.updateHasFixedBottomBar(false)
@@ -53,9 +75,15 @@ internal class DocumentBottomScrollCoordinator(
         val viewportHeightPx = webView.height
         if (viewportHeightPx <= 0) return
 
-        val androidContentHeightPx = computeAndroidContentHeightPx()
-        val jsContentHeightPx = lastJsScrollMetrics?.contentHeightPx ?: 0
-        val totalContentHeightPx = max(androidContentHeightPx, jsContentHeightPx)
+        val totalContentHeightPx = computeTotalContentHeightPx()
+
+        // Unlatch if a page that started as a 100vh shell later hydrates into a long scrollable feed
+        if (latchedFixedFrameBar &&
+            totalContentHeightPx > viewportHeightPx + fixedFrameCurtainAllowancePx + minScrollableRangePx
+        ) {
+            latchedFixedFrameBar = false
+            viewModel.updateHasFixedBottomBar(false)
+        }
 
         val maxScrollPx = totalContentHeightPx - viewportHeightPx
         if (maxScrollPx <= minScrollableRangePx) {
@@ -75,6 +103,12 @@ internal class DocumentBottomScrollCoordinator(
         }
 
         reportProgress(progress)
+    }
+
+    private fun computeTotalContentHeightPx(): Int {
+        val androidContentHeightPx = computeAndroidContentHeightPx()
+        val jsContentHeightPx = lastJsScrollMetrics?.contentHeightPx ?: 0
+        return max(androidContentHeightPx, jsContentHeightPx)
     }
 
     @Suppress("DEPRECATION")
