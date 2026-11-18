@@ -51,7 +51,7 @@ I built **Verve** out of a deep interest in mobile UI design and everyday usabil
 - **Native Rust Performance:** Ad and tracker filtering runs inside a compiled **Rust** JNI engine (`native_adblock`) rather than sluggish script injection, keeping page loads fast and light on battery.
 
 > **🧪 Alpha Stage — Join as an Alpha Tester:**
-> Verve is currently in active **Alpha** (`v1.0.0-alpha.11`). Because features and animations are evolving rapidly, **there will be plenty of bugs and rough edges**. If you love testing early software, feel free to install the APK, report issues you spot, and get **daily updates** delivered straight inside the app via **About Verve**.
+> Verve is currently in active **Alpha**. Because features and animations are evolving rapidly, **there will be plenty of bugs and rough edges**. If you love testing early software, feel free to install the APK, report issues you spot, and get **daily updates** delivered straight inside the app via **About Verve**.
 
 <p align="center">
   <picture>
@@ -105,7 +105,6 @@ I built **Verve** out of a deep interest in mobile UI design and everyday usabil
 
 ### <img src="docs/readme/shape-6.svg" height="18" align="top"> Native Speed & Daily Alpha Updates
 - **Native Rust Ad-Blocker:** Powered by `native_adblock` compiled via `cargo-ndk` (`arm64-v8a` & `x86_64`), blocking ads and trackers at the native JNI layer.
-- **Pooled WebViews & Live Previews:** `TabWebViewPool` keeps tab switching responsive while `TabThumbnailCache` captures clean, toolbar-free page snapshots across RAM and disk.
 - **Built-In Daily Updater:** Fetches new alpha releases directly from GitHub's CDN, verifies APK SHA-256 checksums before installing, and displays formatted Markdown release notes in **About Verve**.
 
 <p align="center">
