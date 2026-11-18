@@ -6,7 +6,7 @@
 
 # Verve Browser
 
-**A tactile, thumb-first Android browser built with Material 3 Expressive and a native Rust ad-blocking core.**
+**A tactile, thumb-first Android browser crafted with Material 3 Expressive—built out of a passion for thoughtful design, fluid motion, and effortless one-handed usability.**
 
 <br>
 
@@ -22,7 +22,7 @@
   <picture><source media="(prefers-color-scheme: dark)" srcset="docs/readme/dark/badge-m3e.svg"><img src="docs/readme/light/badge-m3e.svg" alt="Material 3 Expressive" height="30"></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="docs/readme/dark/badge-kotlin.svg"><img src="docs/readme/light/badge-kotlin.svg" alt="Kotlin + Compose" height="30"></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="docs/readme/dark/badge-rust.svg"><img src="docs/readme/light/badge-rust.svg" alt="Rust Adblock" height="30"></picture>
-  <picture><source media="(prefers-color-scheme: dark)" srcset="docs/readme/dark/badge-android.svg"><img src="docs/readme/light/badge-android.svg" alt="Android 10+" height="30"></picture>
+  <picture><source media="(prefers-color-scheme: dark)" srcset="docs/readme/dark/badge-android.svg"><img src="docs/readme/light/badge-android.svg" alt="Android 12+" height="30"></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="docs/readme/dark/badge-ota.svg"><img src="docs/readme/light/badge-ota.svg" alt="In-App Updater" height="30"></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="docs/readme/dark/badge-oss.svg"><img src="docs/readme/light/badge-oss.svg" alt="Open Source" height="30"></picture>
 </p>
@@ -44,13 +44,14 @@
 
 ## <img src="docs/readme/shape-1.svg" height="26" align="top"> Overview
 
-Most mobile browsers stretch primary actions across the top edge of tall displays. **Verve** flips that layout—anchoring navigation, tab switching, and private browsing inside a single bottom pill engineered for natural one-handed reach.
+I built **Verve** out of a deep interest in mobile UI design and everyday usability. Most modern browsers push core controls to the top of tall screens and treat navigation as static, rigid buttons. Verve rethinks that experience around **Material 3 Expressive**—keeping everything within natural thumb reach inside a responsive bottom search pill driven by spring physics and subtle haptics.
 
-* **Physics over static transitions:** Gestures drive spring animations with tactile haptic feedback, letting you flick between tabs or collapse the toolbar mid-scroll without breaking focus.
-* **Native speed where it counts:** Network filtering runs inside a compiled **Rust** JNI library (`native_adblock`) rather than heavy JavaScript injection, keeping page loads snappy and battery usage low.
-* **Self-updating out of the box:** Built-in release checks fetch manifests directly from GitHub's release CDN, verify APK SHA-256 signatures locally, and present formatted changelogs right inside **About Verve**.
+- **Theme-Chameleon Bottom Bar:** On the homescreen and menus, Verve harmonizes with your system's Material You wallpaper colors. The moment you start browsing, the bottom bar dynamically adapts to match the active webpage's theme color—blending the browser chrome seamlessly into the site you are reading.
+- **Tactile, Gesture-First Ergonomics:** Swipe horizontally across the bottom search pill to glide between open tabs with spring-compressed side buttons, or scroll down to watch the toolbar tuck smoothly out of the way.
+- **Native Rust Performance:** Ad and tracker filtering runs inside a compiled **Rust** JNI engine (`native_adblock`) rather than sluggish script injection, keeping page loads fast and light on battery.
 
-> **Current Release:** `v1.0.0-alpha.11` · Android 10+ · [View All Releases](https://github.com/afsanifti/Verve-Browser/releases)
+> **🧪 Alpha Stage — Join as an Alpha Tester:**
+> Verve is currently in active **Alpha** (`v1.0.0-alpha.11`). Because features and animations are evolving rapidly, **there will be plenty of bugs and rough edges**. If you love testing early software, feel free to install the APK, report issues you spot, and get **daily updates** delivered straight inside the app via **About Verve**.
 
 <p align="center">
   <picture>
@@ -65,20 +66,20 @@ Most mobile browsers stretch primary actions across the top edge of tall display
   <table>
     <tr>
       <td align="center" width="25%">
-        <img src="docs/screenshots/verve-1.png" width="100%" alt="Bottom Search Pill"><br>
-        <sub><b>Bottom Search Pill</b></sub>
+        <img src="docs/screenshots/verve-1.png" width="100%" alt="Minimal Homescreen"><br>
+        <sub><b>Minimal Homescreen</b></sub>
       </td>
       <td align="center" width="25%">
-        <img src="docs/screenshots/verve-2.png" width="100%" alt="Spring Tab Swiping"><br>
-        <sub><b>Spring Tab Swiping</b></sub>
+        <img src="docs/screenshots/verve-2.png" width="100%" alt="Search Bar"><br>
+        <sub><b>Search Bar</b></sub>
       </td>
       <td align="center" width="25%">
-        <img src="docs/screenshots/verve-3.png" width="100%" alt="Quick Tabs Switcher"><br>
-        <sub><b>Quick Tabs Grid</b></sub>
+        <img src="docs/screenshots/verve-3.png" width="100%" alt="Browsing View"><br>
+        <sub><b>Browsing View</b></sub>
       </td>
       <td align="center" width="25%">
-        <img src="docs/screenshots/verve-4.png" width="100%" alt="In-App Updater & Changelog"><br>
-        <sub><b>In-App Updater</b></sub>
+        <img src="docs/screenshots/verve-4.png" width="100%" alt="Collapsed Bottom Bar"><br>
+        <sub><b>Collapsed Bottom Bar</b></sub>
       </td>
     </tr>
   </table>
@@ -93,18 +94,19 @@ Most mobile browsers stretch primary actions across the top edge of tall display
 
 ## <img src="docs/readme/shape-3.svg" height="26" align="top"> Capabilities
 
-### <img src="docs/readme/shape-4.svg" height="18" align="top"> Gesture-Driven Navigation
-- **Scroll-Aware Search Pill:** Automatically tucks away while reading long articles and expands smoothly when scrolling back up or tapping the bar.
-- **Horizontal Pill Tab Swiping:** Drag left or right across the bottom bar to switch adjacent tabs with spring-compressed side buttons and edge rubber-banding.
-- **Instant Incognito Toggle:** Switch into an isolated private session directly from the search bar with adaptive dark tonal styling.
+### <img src="docs/readme/shape-4.svg" height="18" align="top"> Context-Aware Design & Theming
+- **System + Webpage Adaptive Colors:** Follows your device's system light/dark theme and dynamic wallpaper palette at rest, then shifts the bottom toolbar's tonal colors to match the webpage's theme color while browsing.
+- **Material 3 Expressive Motion:** Built with Jetpack Compose and `MaterialKolor` using expressive container shapes, spring-driven transitions, and edge-to-edge system bar styling.
 
-### <img src="docs/readme/shape-5.svg" height="18" align="top"> Performance & Filtering
-- **Native Rust Ad-Blocker:** Powered by `native_adblock` compiled via `cargo-ndk` for `arm64-v8a` and `x86_64`, stripping ads and trackers at the native layer.
-- **Pooled WebViews & Clean Previews:** `TabWebViewPool` keeps tab transitions responsive while `TabThumbnailCache` captures clean, toolbar-free page snapshots across memory and disk.
+### <img src="docs/readme/shape-5.svg" height="18" align="top"> Gesture-Driven Usability
+- **Scroll-Aware Search Pill:** Automatically collapses into a compact bar as you read down a page and expands smoothly when scrolling up or tapping.
+- **Horizontal Pill Tab Swiping:** Drag left or right directly on the bottom bar to switch between open tabs with organic button compression, edge rubber-banding, and haptic detents.
+- **One-Tap Incognito Mode:** Toggle an isolated private session straight from the search bar with dedicated dark tonal styling.
 
-### <img src="docs/readme/shape-6.svg" height="18" align="top"> Personalization & Updates
-- **Adaptive Dynamic Color:** Built with Jetpack Compose and `MaterialKolor` to harmonize surfaces, containers, and system bars with your wallpaper in both light and dark modes.
-- **Verified In-App Updater:** Downloads new releases directly over GitHub's CDN, validates SHA-256 checksums before installation, and keeps full Markdown release notes accessible in **About Verve**.
+### <img src="docs/readme/shape-6.svg" height="18" align="top"> Native Speed & Daily Alpha Updates
+- **Native Rust Ad-Blocker:** Powered by `native_adblock` compiled via `cargo-ndk` (`arm64-v8a` & `x86_64`), blocking ads and trackers at the native JNI layer.
+- **Pooled WebViews & Live Previews:** `TabWebViewPool` keeps tab switching responsive while `TabThumbnailCache` captures clean, toolbar-free page snapshots across RAM and disk.
+- **Built-In Daily Updater:** Fetches new alpha releases directly from GitHub's CDN, verifies APK SHA-256 checksums before installing, and displays formatted Markdown release notes in **About Verve**.
 
 <p align="center">
   <picture>
@@ -119,7 +121,7 @@ Most mobile browsers stretch primary actions across the top edge of tall display
 | :--- | :--- |
 | **App & UI** | Kotlin · Jetpack Compose · Material 3 Expressive · `MaterialKolor` |
 | **Ad-Blocking Core** | Rust · JNI · `cargo-ndk` (`arm64-v8a`, `x86_64`) |
-| **Build System** | Gradle Kotlin DSL · JDK 21 · Android SDK (API 29+) |
+| **Build System** | Gradle Kotlin DSL · JDK 21 · Android SDK (API 31+) |
 | **Release Pipeline** | GitHub Actions · `apksigner` · Automated SHA-256 `update.json` |
 
 <p align="center">
