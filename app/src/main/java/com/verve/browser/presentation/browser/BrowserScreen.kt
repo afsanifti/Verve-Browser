@@ -277,7 +277,6 @@ fun BrowserScreen(
             isOnWebPage = isOnWebPage,
             bottomNavInsets = insetsState.bottomNavInsets,
             webViewRef = webViewRef,
-            tabWebViewPool = tabWebViewPool,
             thumbnailCache = thumbnailCache,
             viewModel = viewModel,
             onSwipeStarted = {

@@ -104,6 +104,10 @@ dependencies {
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation("androidx.work:work-runtime-ktx:2.12.0")
 
+    implementation("androidx.webkit:webkit:1.18.0")
+    implementation("com.google.android.gms:play-services-cronet:18.1.1")
+    implementation("org.chromium.net:cronet-api:500.1.0")
+
     implementation(libs.materialKolor.material3)
     implementation(libs.compose.material3)
     implementation("androidx.compose.material:material-icons-extended:1.7.8")

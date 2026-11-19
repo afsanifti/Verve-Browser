@@ -13,18 +13,21 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import com.verve.browser.presentation.downloads.DownloadsRoute
 import com.verve.browser.presentation.update.AppUpdateController
 
 private enum class SettingsDestination {
     MAIN,
     THEME,
+    DOWNLOADS,
     ABOUT_VERVE
 }
 
 @Composable
 fun SettingsFlow(
     updateController: AppUpdateController,
-    onExitSettings: () -> Unit
+    onExitSettings: () -> Unit,
+    onOpenUrl: (String) -> Unit = {}
 ) {
     var destination by remember { mutableStateOf(SettingsDestination.MAIN) }
     val updateState by updateController.uiState.collectAsState()
@@ -56,12 +59,22 @@ fun SettingsFlow(
                     hasUpdateAvailable = updateState.availableUpdate != null,
                     onNavigateBack = onExitSettings,
                     onOpenTheme = { destination = SettingsDestination.THEME },
+                    onOpenDownloads = { destination = SettingsDestination.DOWNLOADS },
                     onOpenAboutVerve = { destination = SettingsDestination.ABOUT_VERVE }
                 )
             }
             SettingsDestination.THEME -> {
                 ThemeSettingsScreen(
                     onNavigateBack = { destination = SettingsDestination.MAIN }
+                )
+            }
+            SettingsDestination.DOWNLOADS -> {
+                DownloadsRoute(
+                    onNavigateBack = { destination = SettingsDestination.MAIN },
+                    onOpenUrl = { url ->
+                        onExitSettings()
+                        onOpenUrl(url)
+                    }
                 )
             }
             SettingsDestination.ABOUT_VERVE -> {

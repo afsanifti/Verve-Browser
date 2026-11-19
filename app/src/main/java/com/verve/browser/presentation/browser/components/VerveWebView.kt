@@ -8,13 +8,17 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.viewinterop.AndroidView
+import com.verve.browser.data.download.VerveDownloadManager
+import com.verve.browser.data.network.QuicNetworkManager
 import com.verve.browser.presentation.browser.BrowserViewModel
 import com.verve.browser.presentation.browser.components.webview.createTabWebView
 import com.verve.browser.presentation.browser.util.TabThumbnailCache
 import com.verve.browser.presentation.browser.util.TabWebViewPool
+import com.verve.browser.presentation.downloads.DownloadItem
 
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
@@ -25,9 +29,11 @@ fun VerveWebView(
     tabWebViewPool: TabWebViewPool,
     thumbnailCache: TabThumbnailCache,
     onWebViewCreated: (WebView) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onDownloadStarted: (DownloadItem) -> Unit = {}
 ) {
     var attachedTabId by remember { mutableStateOf("") }
+    val latestOnDownloadStarted by rememberUpdatedState(onDownloadStarted)
 
     AndroidView(
         modifier = modifier,
@@ -44,13 +50,20 @@ fun VerveWebView(
                 tabId = tabId,
                 context = hostContainer.context
             ) { ctx ->
+                QuicNetworkManager.initialize(ctx)
                 createTabWebView(
                     context = ctx,
                     tabId = tabId,
                     viewModel = viewModel,
                     tabWebViewPool = tabWebViewPool,
                     thumbnailCache = thumbnailCache
-                )
+                ).also { createdWebView ->
+                    VerveDownloadManager.attachToWebView(
+                        context = ctx,
+                        webView = createdWebView,
+                        onDownloadStarted = { item -> latestOnDownloadStarted(item) }
+                    )
+                }
             }
 
             if (attachedTabId != tabId || targetWebView.parent !== hostContainer) {

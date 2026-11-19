@@ -20,15 +20,21 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.verve.browser.data.network.QuicNetworkManager
 import com.verve.browser.presentation.theme.rememberThemeConfig
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -37,10 +43,17 @@ fun SettingsScreen(
     hasUpdateAvailable: Boolean,
     onNavigateBack: () -> Unit,
     onOpenTheme: () -> Unit,
+    onOpenDownloads: () -> Unit,
     onOpenAboutVerve: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
     val themeConfig = rememberThemeConfig()
+    val isQuicEnabled by QuicNetworkManager.isQuicEnabled.collectAsState()
+
+    LaunchedEffect(Unit) {
+        QuicNetworkManager.initialize(context)
+    }
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
@@ -114,6 +127,25 @@ fun SettingsScreen(
                     ),
                     ExpressiveMenuItem(
                         title = "Default Browser"
+                    ),
+                    ExpressiveMenuItem(
+                        title = "QUIC / HTTP/3",
+                        subtitle = if (isQuicEnabled) {
+                            "Faster encrypted UDP connections enabled"
+                        } else {
+                            "Use standard HTTP/2 over TCP"
+                        },
+                        trailingContent = {
+                            Switch(
+                                checked = isQuicEnabled,
+                                onCheckedChange = { enabled ->
+                                    QuicNetworkManager.setQuicEnabled(context, enabled)
+                                }
+                            )
+                        },
+                        onClick = {
+                            QuicNetworkManager.setQuicEnabled(context, !isQuicEnabled)
+                        }
                     )
                 )
             )
@@ -130,7 +162,8 @@ fun SettingsScreen(
                         onClick = onOpenTheme
                     ),
                     ExpressiveMenuItem(
-                        title = "Downloads"
+                        title = "Downloads",
+                        onClick = onOpenDownloads
                     ),
                     ExpressiveMenuItem(
                         title = "About Verve",
