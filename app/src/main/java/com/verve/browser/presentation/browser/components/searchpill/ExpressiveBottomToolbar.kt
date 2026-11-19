@@ -40,7 +40,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.lerp
 import androidx.compose.ui.unit.sp
 import kotlin.math.abs
 import kotlin.math.exp
@@ -81,6 +80,10 @@ fun ExpressiveBottomToolbar(
     isWebMode: Boolean = false,
     isCollapsed: Boolean = false,
     isSearchFocused: Boolean = false,
+    isFindInPage: Boolean = false,
+    findQuery: String = "",
+    findActiveMatchOrdinal: Int = 0,
+    findTotalMatches: Int = 0,
     isPageLoading: Boolean = false,
     isIncognito: Boolean = false,
     canSwipeToLeftTab: Boolean = false,
@@ -88,6 +91,10 @@ fun ExpressiveBottomToolbar(
     bottomWindowInsets: WindowInsets = WindowInsets.navigationBars.only(WindowInsetsSides.Bottom),
     onSearchFocusChanged: (Boolean) -> Unit = {},
     onCollapsedChange: (Boolean) -> Unit = {},
+    onFindQueryChange: (String) -> Unit = {},
+    onFindPrevious: () -> Unit = {},
+    onFindNext: () -> Unit = {},
+    onCloseFindInPage: () -> Unit = {},
     onSwipeStarted: () -> Unit = {},
     onSwipeFractionChanged: (Float) -> Unit = {},
     onSwipeCommitted: (direction: Int, currentFraction: Float) -> Unit = { _, _ -> },
@@ -105,7 +112,8 @@ fun ExpressiveBottomToolbar(
     val coroutineScope = rememberCoroutineScope()
     val textMeasurer = rememberTextMeasurer()
 
-    val effectiveCollapsed = isWebMode && isCollapsed && !isSearchFocused
+    val effectiveCollapsed = isWebMode && isCollapsed && !isSearchFocused && !isFindInPage
+    val isSingleFullPill = isSearchFocused || isFindInPage
     val verticalSwipeThresholdPx = with(density) { 18.dp.toPx() }
     val horizontalCommitThresholdPx = with(density) { 54.dp.toPx() }
     val sideSlideOffsetPx = with(density) { 16.dp.toPx() }
@@ -113,7 +121,7 @@ fun ExpressiveBottomToolbar(
 
     val currentIsWebMode by rememberUpdatedState(isWebMode)
     val currentEffectiveCollapsed by rememberUpdatedState(effectiveCollapsed)
-    val currentIsSearchFocused by rememberUpdatedState(isSearchFocused)
+    val currentIsSingleFullPill by rememberUpdatedState(isSingleFullPill)
     val currentCanSwipeLeftTab by rememberUpdatedState(canSwipeToLeftTab)
     val currentCanSwipeRightTab by rememberUpdatedState(canSwipeToRightTab)
     val currentOnCollapsedChange by rememberUpdatedState(onCollapsedChange)
@@ -135,13 +143,13 @@ fun ExpressiveBottomToolbar(
     )
 
     val leftButtonProgress by animateFloatAsState(
-        targetValue = if (isWebMode && !effectiveCollapsed && !isSearchFocused) 1f else 0f,
+        targetValue = if (isWebMode && !effectiveCollapsed && !isSingleFullPill) 1f else 0f,
         animationSpec = ExpressiveToolbarQuickSpring,
         label = "leftButtonProgress"
     )
 
     val rightButtonProgress by animateFloatAsState(
-        targetValue = if (!effectiveCollapsed && !isSearchFocused) 1f else 0f,
+        targetValue = if (!effectiveCollapsed && !isSingleFullPill) 1f else 0f,
         animationSpec = ExpressiveToolbarQuickSpring,
         label = "rightButtonProgress"
     )
@@ -192,7 +200,7 @@ fun ExpressiveBottomToolbar(
                 val touchSlop = viewConfiguration.touchSlop
                 awaitEachGesture {
                     val down = awaitFirstDown(requireUnconsumed = false)
-                    if (currentIsSearchFocused) return@awaitEachGesture
+                    if (currentIsSingleFullPill) return@awaitEachGesture
 
                     val velocityTracker = VelocityTracker()
                     velocityTracker.addPosition(down.uptimeMillis, down.position)
@@ -333,7 +341,7 @@ fun ExpressiveBottomToolbar(
 
         val targetExpandedPillWidth = (maxWidth - leftSlotWidth - rightSlotWidth)
             .coerceAtLeast(collapsedPillWidth)
-        val currentPillWidth = lerp(
+        val currentPillWidth = androidx.compose.ui.unit.lerp(
             start = collapsedPillWidth,
             stop = targetExpandedPillWidth,
             fraction = expandProgress.coerceIn(0f, 1f)
@@ -395,6 +403,10 @@ fun ExpressiveBottomToolbar(
                 isPageLoading = isPageLoading,
                 isThemeLoading = isThemeLoading,
                 isIncognito = isIncognito,
+                isFindInPage = isFindInPage,
+                findQuery = findQuery,
+                findActiveMatchOrdinal = findActiveMatchOrdinal,
+                findTotalMatches = findTotalMatches,
                 expandProgress = expandProgress,
                 swipeContentShiftPx = contentShiftPx,
                 onThemeAnimationCompleted = onThemeAnimationCompleted,
@@ -404,6 +416,10 @@ fun ExpressiveBottomToolbar(
                 onRefreshClick = onRefreshClick,
                 onStopLoadingClick = onStopLoadingClick,
                 onToggleIncognito = onToggleIncognito,
+                onFindQueryChange = onFindQueryChange,
+                onFindPrevious = onFindPrevious,
+                onFindNext = onFindNext,
+                onCloseFindInPage = onCloseFindInPage,
                 modifier = Modifier
                     .width(currentPillWidth)
                     .graphicsLayer {

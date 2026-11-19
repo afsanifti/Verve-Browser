@@ -31,10 +31,10 @@ import com.verve.browser.data.update.UpdateNotificationHelper
 import com.verve.browser.presentation.browser.components.QuickTabsScreen
 import com.verve.browser.presentation.browser.screen.BrowserBackHandler
 import com.verve.browser.presentation.browser.screen.BrowserBottomProgressiveCurtain
-import com.verve.browser.presentation.browser.screen.BrowserSearchOverlay
 import com.verve.browser.presentation.browser.screen.BrowserSystemBarSync
 import com.verve.browser.presentation.browser.screen.BrowserTopSafeAreaCurtain
 import com.verve.browser.presentation.browser.screen.BrowserWebViewport
+import com.verve.browser.presentation.browser.screen.overlay.BrowserSearchOverlay
 import com.verve.browser.presentation.browser.screen.rememberBrowserCurtainMetrics
 import com.verve.browser.presentation.browser.screen.rememberBrowserInsetsState
 import com.verve.browser.presentation.browser.util.TabThumbnailCache
@@ -43,9 +43,9 @@ import com.verve.browser.presentation.settings.SettingsFlow
 import com.verve.browser.presentation.theme.VerveBrowserTheme
 import com.verve.browser.presentation.update.AppUpdateController
 import com.verve.browser.presentation.update.AppUpdateSheet
+import kotlin.time.Duration.Companion.milliseconds
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlin.time.Duration.Companion.milliseconds
 
 // Critically damped springs so tab-switch slides settle smoothly without bouncing
 private val CarouselCommitSpring = spring<Float>(
@@ -68,6 +68,8 @@ fun BrowserScreen(
     val uiState: BrowserUiState by viewModel.uiState.collectAsState()
     var webViewRef by remember { mutableStateOf<WebView?>(null) }
     var isSettingsOpen by remember { mutableStateOf(false) }
+    var openAboutVerveDirectly by remember { mutableStateOf(false) }
+    var autoStartUpdateOnAboutVerve by remember { mutableStateOf(false) }
     val carouselOffsetFraction = remember { Animatable(0f) }
 
     val context = LocalContext.current
@@ -152,6 +154,8 @@ fun BrowserScreen(
     LaunchedEffect(openUpdateSheetRequested) {
         if (openUpdateSheetRequested) {
             isSettingsOpen = false
+            openAboutVerveDirectly = false
+            autoStartUpdateOnAboutVerve = false
             updateController.openModalSheet()
             onUpdateSheetRequestHandled()
         }
@@ -160,7 +164,12 @@ fun BrowserScreen(
     if (!isSettingsOpen) {
         AppUpdateSheet(
             state = updateState,
-            onUpdateClick = updateController::startDownloadAndInstall,
+            onUpdateClick = {
+                updateController.hideSheet()
+                openAboutVerveDirectly = true
+                autoStartUpdateOnAboutVerve = true
+                isSettingsOpen = true
+            },
             onDismiss = { updateController.dismissSheet() }
         )
     }
@@ -336,7 +345,11 @@ fun BrowserScreen(
                 onAddTabToStack = viewModel::addTabToStack,
                 onRemoveTabFromStack = viewModel::removeTabFromStack,
                 onToggleStackCollapsed = viewModel::toggleStackCollapsed,
-                onSettingsClick = { isSettingsOpen = true },
+                onSettingsClick = {
+                    openAboutVerveDirectly = false
+                    autoStartUpdateOnAboutVerve = false
+                    isSettingsOpen = true
+                },
                 modifier = Modifier.fillMaxSize()
             )
         }
@@ -346,7 +359,17 @@ fun BrowserScreen(
             VerveBrowserTheme(siteSeedColor = null) {
                 SettingsFlow(
                     updateController = updateController,
-                    onExitSettings = { isSettingsOpen = false }
+                    openAboutVerveDirectly = openAboutVerveDirectly,
+                    autoStartUpdate = autoStartUpdateOnAboutVerve,
+                    onAutoStartUpdateHandled = { autoStartUpdateOnAboutVerve = false },
+                    onExitSettings = {
+                        isSettingsOpen = false
+                        openAboutVerveDirectly = false
+                        autoStartUpdateOnAboutVerve = false
+                    },
+                    onOpenUrl = { url ->
+                        viewModel.onUrlSubmitted(url)
+                    }
                 )
             }
         }

@@ -14,11 +14,11 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.FindInPage
 import androidx.compose.material.icons.rounded.Settings
-import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material.icons.rounded.ZoomIn
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.ListItemColors
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SegmentedListItem
@@ -28,11 +28,14 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.painter.Painter
+import androidx.compose.ui.graphics.vector.rememberVectorPainter
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.verve.browser.R
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
@@ -52,10 +55,10 @@ internal fun PageActionsMiddleSections(
     )
 
     val actionItems = listOf(
-        Triple(Icons.Rounded.Tune, "Site controls", onSiteControlsClick),
-        Triple(Icons.Rounded.FindInPage, "Find on page", onFindOnPageClick),
-        Triple(Icons.Rounded.Download, "Downloads", onDownloadsClick),
-        Triple(Icons.Rounded.ZoomIn, "Zoom", onZoomClick)
+        Triple(painterResource(id = R.drawable.ic_siteinfo), "Site controls", onSiteControlsClick),
+        Triple(rememberVectorPainter(Icons.Rounded.FindInPage), "Find on page", onFindOnPageClick),
+        Triple(rememberVectorPainter(Icons.Rounded.Download), "Downloads", onDownloadsClick),
+        Triple(rememberVectorPainter(Icons.Rounded.ZoomIn), "Zoom", onZoomClick)
     )
 
     Column(
@@ -116,11 +119,11 @@ internal fun PageActionsMiddleSections(
             modifier = Modifier.fillMaxWidth(),
             verticalArrangement = Arrangement.spacedBy(ListItemDefaults.SegmentedGap)
         ) {
-            actionItems.forEachIndexed { index, (icon, label, onClick) ->
+            actionItems.forEachIndexed { index, (painter, label, onClick) ->
                 SegmentedSheetActionItem(
                     index = index,
                     count = actionItems.size,
-                    icon = icon,
+                    painter = painter,
                     label = label,
                     colors = segmentedItemColors,
                     onClick = onClick
@@ -135,9 +138,9 @@ internal fun PageActionsMiddleSections(
 private fun SegmentedSheetActionItem(
     index: Int,
     count: Int,
-    icon: ImageVector,
+    painter: Painter,
     label: String,
-    colors: androidx.compose.material3.ListItemColors,
+    colors: ListItemColors,
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -148,7 +151,7 @@ private fun SegmentedSheetActionItem(
         modifier = modifier.fillMaxWidth(),
         leadingContent = {
             Icon(
-                imageVector = icon,
+                painter = painter,
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.size(20.dp)

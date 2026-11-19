@@ -1,6 +1,6 @@
 package com.verve.browser.presentation.browser.components.searchpill
 
-import android.net.Uri
+import android.annotation.SuppressLint
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -67,6 +67,8 @@ import com.verve.browser.presentation.browser.components.pillTertiaryLoadingGrad
 import com.verve.browser.presentation.browser.util.DropShadow
 import kotlin.math.sin
 import kotlinx.coroutines.delay
+import androidx.core.net.toUri
+import kotlin.time.Duration.Companion.milliseconds
 
 @Composable
 fun ExpressiveSearchPill(
@@ -80,6 +82,10 @@ fun ExpressiveSearchPill(
     isPageLoading: Boolean = false,
     isThemeLoading: Boolean = false,
     isIncognito: Boolean = false,
+    isFindInPage: Boolean = false,
+    findQuery: String = "",
+    findActiveMatchOrdinal: Int = 0,
+    findTotalMatches: Int = 0,
     expandProgress: Float? = null,
     swipeContentShiftPx: Float = 0f,
     onThemeAnimationCompleted: () -> Unit = {},
@@ -88,7 +94,11 @@ fun ExpressiveSearchPill(
     onSiteSettingsClick: () -> Unit = {},
     onRefreshClick: () -> Unit = {},
     onStopLoadingClick: () -> Unit = {},
-    onToggleIncognito: () -> Unit = {}
+    onToggleIncognito: () -> Unit = {},
+    onFindQueryChange: (String) -> Unit = {},
+    onFindPrevious: () -> Unit = {},
+    onFindNext: () -> Unit = {},
+    onCloseFindInPage: () -> Unit = {}
 ) {
     val focusManager = LocalFocusManager.current
     val focusRequester = remember { FocusRequester() }
@@ -107,7 +117,7 @@ fun ExpressiveSearchPill(
 
     LaunchedEffect(visualIncognito) {
         if (visualIncognito != isIncognito) {
-            delay(230L)
+            delay(230L.milliseconds)
             onToggleIncognito()
         }
     }
@@ -134,8 +144,8 @@ fun ExpressiveSearchPill(
         }
     }
 
-    val effectiveCollapsed = isWebMode && isCollapsed && !isEditingUrl
-    val isPillLoading = isWebMode && !isEditingUrl && (isPageLoading || isThemeLoading)
+    val effectiveCollapsed = isWebMode && isCollapsed && !isEditingUrl && !isFindInPage
+    val isPillLoading = isWebMode && !isEditingUrl && !isFindInPage && (isPageLoading || isThemeLoading)
 
     val containerColor by animateColorAsState(
         targetValue = if (isPillLoading) {
@@ -203,205 +213,248 @@ fun ExpressiveSearchPill(
                 containerColor = containerColor
             )
     ) {
-        if (isWebMode && !isEditingUrl) {
-            val iconProgress = ((clampedExpand - 0.30f) / 0.70f).coerceIn(0f, 1f)
-            val iconScale = 0.68f + 0.32f * iconProgress
-            val domainHorizontalPadding = lerp(14.dp, 54.dp, clampedExpand)
-
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .graphicsLayer {
-                        translationX = swipeContentShiftPx
-                    }
-            ) {
-                IconButton(
-                    onClick = onSiteSettingsClick,
-                    enabled = iconProgress > 0.65f,
-                    modifier = Modifier
-                        .align(Alignment.CenterStart)
-                        .padding(start = 8.dp)
-                        .graphicsLayer {
-                            alpha = iconProgress
-                            scaleX = iconScale
-                            scaleY = iconScale
-                            translationX = -iconSlidePx * (1f - iconProgress)
-                        }
-                ) {
-                    Icon(
-                        painter = painterResource(id = R.drawable.ic_siteinfo),
-                        contentDescription = "Site Settings",
-                        tint = contentColor,
-                        modifier = Modifier.size(18.dp)
-                    )
-                }
+        // Normal URL / Search Pill Interior
+        AnimatedVisibility(
+            visible = !isFindInPage,
+            enter = fadeIn(animationSpec = tween(durationMillis = 190, delayMillis = 60)) +
+                    scaleIn(
+                        initialScale = 0.96f,
+                        animationSpec = tween(durationMillis = 210, delayMillis = 50, easing = FastOutSlowInEasing)
+                    ),
+            exit = fadeOut(animationSpec = tween(durationMillis = 100)) +
+                    scaleOut(
+                        targetScale = 0.96f,
+                        animationSpec = tween(durationMillis = 100)
+                    ),
+            modifier = Modifier.fillMaxSize()
+        ) {
+            if (isWebMode && !isEditingUrl) {
+                val iconProgress = ((clampedExpand - 0.30f) / 0.70f).coerceIn(0f, 1f)
+                val iconScale = 0.68f + 0.32f * iconProgress
+                val domainHorizontalPadding = lerp(14.dp, 54.dp, clampedExpand)
 
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
-                        .clickable(
-                            interactionSource = remember { MutableInteractionSource() },
-                            indication = null
-                        ) {
-                            if (clampedExpand < 0.5f) {
-                                onExpandClick()
-                            } else {
-                                textFieldValue = TextFieldValue(
-                                    text = currentUrl,
-                                    selection = TextRange(0, currentUrl.length)
-                                )
-                                onInputTextChange(currentUrl)
-                                isEditingUrl = true
-                            }
-                        }
-                        .padding(horizontal = domainHorizontalPadding),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = extractDisplayDomain(currentUrl),
-                        style = MaterialTheme.typography.titleMedium.copy(
-                            color = contentColor,
-                            fontSize = lerp(12.sp, 16.sp, clampedExpand),
-                            fontWeight = FontWeight.Medium,
-                            textAlign = TextAlign.Center
-                        ),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-
-                IconButton(
-                    onClick = if (isPageLoading) onStopLoadingClick else onRefreshClick,
-                    enabled = iconProgress > 0.65f,
-                    modifier = Modifier
-                        .align(Alignment.CenterEnd)
-                        .padding(end = 8.dp)
                         .graphicsLayer {
-                            alpha = iconProgress
-                            scaleX = iconScale
-                            scaleY = iconScale
-                            translationX = iconSlidePx * (1f - iconProgress)
+                            translationX = swipeContentShiftPx
                         }
                 ) {
-                    Icon(
-                        imageVector = if (isPageLoading) Icons.Rounded.Close else Icons.Rounded.Refresh,
-                        contentDescription = if (isPageLoading) "Stop Loading" else "Reload Page",
-                        tint = contentColor,
-                        modifier = Modifier.size(22.dp)
-                    )
-                }
-            }
-        } else {
-            Row(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .graphicsLayer {
-                        translationX = swipeContentShiftPx
-                    }
-                    .padding(horizontal = 20.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(
-                    painter = painterResource(id = R.drawable.ic_search),
-                    contentDescription = "Search",
-                    tint = contentColor,
-                    modifier = Modifier.size(18.dp)
-                )
-
-                Spacer(modifier = Modifier.width(12.dp))
-
-                BasicTextField(
-                    value = textFieldValue,
-                    onValueChange = { newValue ->
-                        textFieldValue = newValue
-                        if (newValue.text != inputText) {
-                            onInputTextChange(newValue.text)
-                        }
-                    },
-                    modifier = Modifier
-                        .weight(1f)
-                        .focusRequester(focusRequester)
-                        .onFocusChanged { state ->
-                            isSearchFocused = state.isFocused
-                            onFocusChanged(state.isFocused)
-                            if (state.isFocused) {
-                                if (!hasGainedFocus && isWebMode) {
-                                    textFieldValue = textFieldValue.copy(
-                                        selection = TextRange(0, textFieldValue.text.length)
-                                    )
-                                }
-                                hasGainedFocus = true
-                            } else if (hasGainedFocus && isWebMode) {
-                                isEditingUrl = false
-                            }
-                        },
-                    singleLine = true,
-                    textStyle = MaterialTheme.typography.titleMedium.copy(
-                        color = contentColor
-                    ),
-                    cursorBrush = SolidColor(contentColor),
-                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                    keyboardActions = KeyboardActions(
-                        onSearch = { submitAction() },
-                        onGo = { submitAction() },
-                        onDone = { submitAction() }
-                    ),
-                    decorationBox = { innerTextField ->
-                        Box(contentAlignment = Alignment.CenterStart) {
-                            if (textFieldValue.text.isEmpty()) {
-                                Text(
-                                    text = "Search....",
-                                    style = MaterialTheme.typography.titleMedium.copy(
-                                        color = contentColor.copy(alpha = 0.6f)
-                                    )
-                                )
-                            }
-                            innerTextField()
-                        }
-                    }
-                )
-
-                AnimatedVisibility(
-                    visible = !isWebMode && isSearchFocused,
-                    enter = fadeIn(tween(200)) + scaleIn(initialScale = 0.85f, animationSpec = tween(200)),
-                    exit = fadeOut(tween(150)) + scaleOut(targetScale = 0.85f, animationSpec = tween(150))
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
+                    IconButton(
+                        onClick = onSiteSettingsClick,
+                        enabled = iconProgress > 0.65f,
                         modifier = Modifier
+                            .align(Alignment.CenterStart)
+                            .padding(start = 8.dp)
+                            .graphicsLayer {
+                                alpha = iconProgress
+                                scaleX = iconScale
+                                scaleY = iconScale
+                                translationX = -iconSlidePx * (1f - iconProgress)
+                            }
+                    ) {
+                        Icon(
+                            painter = painterResource(id = R.drawable.ic_siteinfo),
+                            contentDescription = "Site Settings",
+                            tint = contentColor,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
                             .clickable(
                                 interactionSource = remember { MutableInteractionSource() },
                                 indication = null
                             ) {
-                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                focusRequester.requestFocus()
-                                visualIncognito = !visualIncognito
+                                if (clampedExpand < 0.5f) {
+                                    onExpandClick()
+                                } else {
+                                    textFieldValue = TextFieldValue(
+                                        text = currentUrl,
+                                        selection = TextRange(0, currentUrl.length)
+                                    )
+                                    onInputTextChange(currentUrl)
+                                    isEditingUrl = true
+                                }
                             }
-                            .padding(start = 8.dp, top = 6.dp, bottom = 6.dp)
+                            .padding(horizontal = domainHorizontalPadding),
+                        contentAlignment = Alignment.Center
                     ) {
-                        AnimatedVisibility(
-                            visible = visualIncognito,
-                            enter = fadeIn(tween(220)) + expandHorizontally(expandFrom = Alignment.End),
-                            exit = fadeOut(tween(160)) + shrinkHorizontally(shrinkTowards = Alignment.End)
-                        ) {
-                            Text(
-                                text = "incognito",
-                                style = MaterialTheme.typography.labelMedium.copy(
-                                    color = contentColor.copy(alpha = 0.72f),
-                                    fontWeight = FontWeight.Medium,
-                                    letterSpacing = 0.2.sp
-                                ),
-                                modifier = Modifier.padding(end = 8.dp)
-                            )
-                        }
+                        Text(
+                            text = extractDisplayDomain(currentUrl),
+                            style = MaterialTheme.typography.titleMedium.copy(
+                                color = contentColor,
+                                fontSize = lerp(12.sp, 16.sp, clampedExpand),
+                                fontWeight = FontWeight.Medium,
+                                textAlign = TextAlign.Center
+                            ),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
 
-                        IncognitoEyesAnimatedIcon(
-                            isClosed = visualIncognito,
-                            tint = contentColor
+                    IconButton(
+                        onClick = if (isPageLoading) onStopLoadingClick else onRefreshClick,
+                        enabled = iconProgress > 0.65f,
+                        modifier = Modifier
+                            .align(Alignment.CenterEnd)
+                            .padding(end = 8.dp)
+                            .graphicsLayer {
+                                alpha = iconProgress
+                                scaleX = iconScale
+                                scaleY = iconScale
+                                translationX = iconSlidePx * (1f - iconProgress)
+                            }
+                    ) {
+                        Icon(
+                            imageVector = if (isPageLoading) Icons.Rounded.Close else Icons.Rounded.Refresh,
+                            contentDescription = if (isPageLoading) "Stop Loading" else "Reload Page",
+                            tint = contentColor,
+                            modifier = Modifier.size(22.dp)
                         )
                     }
                 }
+            } else {
+                Row(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .graphicsLayer {
+                            translationX = swipeContentShiftPx
+                        }
+                        .padding(horizontal = 20.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        painter = painterResource(id = R.drawable.ic_search),
+                        contentDescription = "Search",
+                        tint = contentColor,
+                        modifier = Modifier.size(18.dp)
+                    )
+
+                    Spacer(modifier = Modifier.width(12.dp))
+
+                    BasicTextField(
+                        value = textFieldValue,
+                        onValueChange = { newValue ->
+                            textFieldValue = newValue
+                            if (newValue.text != inputText) {
+                                onInputTextChange(newValue.text)
+                            }
+                        },
+                        modifier = Modifier
+                            .weight(1f)
+                            .focusRequester(focusRequester)
+                            .onFocusChanged { state ->
+                                isSearchFocused = state.isFocused
+                                onFocusChanged(state.isFocused)
+                                if (state.isFocused) {
+                                    if (!hasGainedFocus && isWebMode) {
+                                        textFieldValue = textFieldValue.copy(
+                                            selection = TextRange(0, textFieldValue.text.length)
+                                        )
+                                    }
+                                    hasGainedFocus = true
+                                } else if (hasGainedFocus && isWebMode) {
+                                    isEditingUrl = false
+                                }
+                            },
+                        singleLine = true,
+                        textStyle = MaterialTheme.typography.titleMedium.copy(
+                            color = contentColor
+                        ),
+                        cursorBrush = SolidColor(contentColor),
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                        keyboardActions = KeyboardActions(
+                            onSearch = { submitAction() },
+                            onGo = { submitAction() },
+                            onDone = { submitAction() }
+                        ),
+                        decorationBox = { innerTextField ->
+                            Box(contentAlignment = Alignment.CenterStart) {
+                                if (textFieldValue.text.isEmpty()) {
+                                    Text(
+                                        text = "Search....",
+                                        style = MaterialTheme.typography.titleMedium.copy(
+                                            color = contentColor.copy(alpha = 0.6f)
+                                        )
+                                    )
+                                }
+                                innerTextField()
+                            }
+                        }
+                    )
+
+                    AnimatedVisibility(
+                        visible = !isWebMode && isSearchFocused,
+                        enter = fadeIn(tween(200)) + scaleIn(initialScale = 0.85f, animationSpec = tween(200)),
+                        exit = fadeOut(tween(150)) + scaleOut(targetScale = 0.85f, animationSpec = tween(150))
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .clickable(
+                                    interactionSource = remember { MutableInteractionSource() },
+                                    indication = null
+                                ) {
+                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    focusRequester.requestFocus()
+                                    visualIncognito = !visualIncognito
+                                }
+                                .padding(start = 8.dp, top = 6.dp, bottom = 6.dp)
+                        ) {
+                            AnimatedVisibility(
+                                visible = visualIncognito,
+                                enter = fadeIn(tween(220)) + expandHorizontally(expandFrom = Alignment.End),
+                                exit = fadeOut(tween(160)) + shrinkHorizontally(shrinkTowards = Alignment.End)
+                            ) {
+                                Text(
+                                    text = "incognito",
+                                    style = MaterialTheme.typography.labelMedium.copy(
+                                        color = contentColor.copy(alpha = 0.72f),
+                                        fontWeight = FontWeight.Medium,
+                                        letterSpacing = 0.2.sp
+                                    ),
+                                    modifier = Modifier.padding(end = 8.dp)
+                                )
+                            }
+
+                            IncognitoEyesAnimatedIcon(
+                                isClosed = visualIncognito,
+                                tint = contentColor
+                            )
+                        }
+                    }
+                }
             }
+        }
+
+        // Find-in-Page Interior (crossfades in smoothly as the pill expands bilaterally)
+        AnimatedVisibility(
+            visible = isFindInPage,
+            enter = fadeIn(animationSpec = tween(durationMillis = 200, delayMillis = 65)) +
+                    scaleIn(
+                        initialScale = 0.96f,
+                        animationSpec = tween(durationMillis = 220, delayMillis = 55, easing = FastOutSlowInEasing)
+                    ),
+            exit = fadeOut(animationSpec = tween(durationMillis = 95)) +
+                    scaleOut(
+                        targetScale = 0.96f,
+                        animationSpec = tween(durationMillis = 95)
+                    ),
+            modifier = Modifier.fillMaxSize()
+        ) {
+            FindInPagePillContent(
+                query = findQuery,
+                activeMatchOrdinal = findActiveMatchOrdinal,
+                totalMatches = findTotalMatches,
+                contentColor = contentColor,
+                onQueryChange = onFindQueryChange,
+                onFindPrevious = onFindPrevious,
+                onFindNext = onFindNext,
+                onClose = onCloseFindInPage
+            )
         }
     }
 }
@@ -478,9 +531,10 @@ private fun IncognitoEyesAnimatedIcon(
     }
 }
 
+@SuppressLint("UseKtx")
 internal fun extractDisplayDomain(url: String): String {
     return runCatching {
-        val host = Uri.parse(url).host
+        val host = url.toUri().host
         if (!host.isNullOrBlank()) {
             host.removePrefix("www.")
         } else {

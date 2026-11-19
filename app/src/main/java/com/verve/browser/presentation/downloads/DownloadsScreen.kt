@@ -1,8 +1,11 @@
 package com.verve.browser.presentation.downloads
 
+import android.content.ActivityNotFoundException
 import android.content.ClipData
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
+import android.widget.Toast
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -36,9 +39,9 @@ import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.core.content.FileProvider
+import androidx.core.net.toUri
 import com.verve.browser.data.download.VerveDownloadManager
-import java.io.File
+import java.util.Locale
 import kotlinx.coroutines.launch
 
 @Composable
@@ -58,10 +61,13 @@ fun DownloadsRoute(
             VerveDownloadManager.togglePauseResume(context, target.id)
         },
         onCancelDownload = { target ->
-            VerveDownloadManager.cancelDownload(target.id)
+            VerveDownloadManager.cancelDownload(context, target.id)
         },
         onOpenDownload = { target ->
-            if (!openLocalDownloadedFile(context, target)) {
+            val downloadUri = resolveAvailableDownloadUri(context, target)
+            if (downloadUri != null) {
+                openDownloadedUri(context, target, downloadUri)
+            } else {
                 onOpenUrl(target.url)
             }
         },
@@ -69,54 +75,75 @@ fun DownloadsRoute(
             shareDownloadedFileOrUrl(context, target)
         },
         onDeleteDownload = { target ->
-            VerveDownloadManager.deleteDownload(target.id)
+            VerveDownloadManager.deleteDownload(context, target.id)
         },
         onClearCompleted = {
-            VerveDownloadManager.clearCompleted()
+            VerveDownloadManager.clearCompleted(context)
         }
     )
 }
 
-private fun openLocalDownloadedFile(context: Context, item: DownloadItem): Boolean {
-    val path = item.localFilePath ?: return false
-    val file = File(path)
-    return file.exists() && runCatching {
-        val uri = FileProvider.getUriForFile(
-            context,
-            "${context.packageName}.fileprovider",
-            file
-        )
+private fun resolveAvailableDownloadUri(context: Context, item: DownloadItem): Uri? {
+    val uriString = item.contentUri ?: return null
+    val parsed = uriString.toUri()
+    val exists = runCatching {
+        context.contentResolver.openFileDescriptor(parsed, "r")?.use { true } ?: false
+    }.getOrDefault(false)
+    return if (exists) parsed else null
+}
+
+private fun resolveEffectiveMimeType(item: DownloadItem): String {
+    return if (item.fileName.lowercase(Locale.US).endsWith(".apk")) {
+        "application/vnd.android.package-archive"
+    } else {
+        item.mimeType
+    }
+}
+
+private fun openDownloadedUri(
+    context: Context,
+    item: DownloadItem,
+    uri: Uri
+) {
+    val effectiveMimeType = resolveEffectiveMimeType(item)
+    try {
         val viewIntent = Intent(Intent.ACTION_VIEW).apply {
-            setDataAndType(uri, item.mimeType)
+            setDataAndType(uri, effectiveMimeType)
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
         }
         context.startActivity(viewIntent)
-        true
-    }.getOrDefault(false)
+    } catch (_: ActivityNotFoundException) {
+        Toast.makeText(
+            context,
+            "No app found to open ${item.fileName}",
+            Toast.LENGTH_SHORT
+        ).show()
+    } catch (_: Exception) {
+        Toast.makeText(
+            context,
+            "Unable to open ${item.fileName}",
+            Toast.LENGTH_SHORT
+        ).show()
+    }
 }
 
 private fun shareDownloadedFileOrUrl(context: Context, item: DownloadItem) {
-    val file = item.localFilePath?.let { File(it) }?.takeIf { it.exists() }
-    val shareIntent = if (file != null) {
-        runCatching {
-            val uri = FileProvider.getUriForFile(
-                context,
-                "${context.packageName}.fileprovider",
-                file
-            )
-            Intent(Intent.ACTION_SEND).apply {
-                type = item.mimeType
-                putExtra(Intent.EXTRA_STREAM, uri)
-                putExtra(Intent.EXTRA_SUBJECT, item.fileName)
-                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            }
-        }.getOrNull()
+    val uri = resolveAvailableDownloadUri(context, item)
+    val effectiveMimeType = resolveEffectiveMimeType(item)
+
+    val shareIntent = if (uri != null) {
+        Intent(Intent.ACTION_SEND).apply {
+            type = effectiveMimeType
+            putExtra(Intent.EXTRA_STREAM, uri)
+            putExtra(Intent.EXTRA_SUBJECT, item.fileName)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
     } else {
-        null
-    } ?: Intent(Intent.ACTION_SEND).apply {
-        type = "text/plain"
-        putExtra(Intent.EXTRA_SUBJECT, item.fileName)
-        putExtra(Intent.EXTRA_TEXT, item.url)
+        Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_SUBJECT, item.fileName)
+            putExtra(Intent.EXTRA_TEXT, item.url)
+        }
     }
 
     context.startActivity(

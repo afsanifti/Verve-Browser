@@ -8,6 +8,7 @@ import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -27,9 +28,20 @@ private enum class SettingsDestination {
 fun SettingsFlow(
     updateController: AppUpdateController,
     onExitSettings: () -> Unit,
+    openAboutVerveDirectly: Boolean = false,
+    autoStartUpdate: Boolean = false,
+    onAutoStartUpdateHandled: () -> Unit = {},
     onOpenUrl: (String) -> Unit = {}
 ) {
-    var destination by remember { mutableStateOf(SettingsDestination.MAIN) }
+    var destination by remember {
+        mutableStateOf(
+            if (openAboutVerveDirectly) {
+                SettingsDestination.ABOUT_VERVE
+            } else {
+                SettingsDestination.MAIN
+            }
+        )
+    }
     val updateState by updateController.uiState.collectAsState()
 
     BackHandler {
@@ -78,6 +90,13 @@ fun SettingsFlow(
                 )
             }
             SettingsDestination.ABOUT_VERVE -> {
+                LaunchedEffect(autoStartUpdate) {
+                    if (autoStartUpdate) {
+                        onAutoStartUpdateHandled()
+                        updateController.startDownloadAndInstall()
+                    }
+                }
+
                 AboutVerveScreen(
                     updateState = updateState,
                     onCheckForUpdates = { updateController.checkForUpdates(userInitiated = true) },

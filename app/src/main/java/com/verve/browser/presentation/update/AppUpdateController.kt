@@ -117,6 +117,12 @@ class AppUpdateController(
         }
     }
 
+    fun hideSheet() {
+        _uiState.update {
+            it.copy(isSheetVisible = false)
+        }
+    }
+
     fun checkForUpdates(
         userInitiated: Boolean = true,
         showModalIfFound: Boolean = userInitiated

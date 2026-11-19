@@ -1,9 +1,13 @@
 package com.verve.browser.data.download
 
+import android.content.ContentValues
 import android.content.Context
 import android.net.Uri
 import android.os.Environment
+import android.os.ParcelFileDescriptor
 import android.os.SystemClock
+import android.provider.MediaStore
+import android.provider.OpenableColumns
 import android.webkit.MimeTypeMap
 import android.webkit.URLUtil
 import android.webkit.WebView
@@ -11,13 +15,11 @@ import com.verve.browser.data.network.QuicNetworkManager
 import com.verve.browser.presentation.downloads.DownloadItem
 import com.verve.browser.presentation.downloads.DownloadStatus
 import com.verve.browser.presentation.downloads.inferDownloadFileType
-import java.io.File
 import java.io.FileOutputStream
 import java.net.HttpURLConnection
 import java.net.URL
 import java.nio.ByteBuffer
-import java.nio.channels.Channels
-import java.nio.channels.WritableByteChannel
+import java.nio.channels.FileChannel
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
@@ -31,6 +33,7 @@ import kotlinx.coroutines.flow.update
 import org.chromium.net.CronetException
 import org.chromium.net.UrlRequest
 import org.chromium.net.UrlResponseInfo
+import androidx.core.net.toUri
 
 object VerveDownloadManager {
 
@@ -50,7 +53,7 @@ object VerveDownloadManager {
 
     /**
      * Attaches a WebView DownloadListener so any file download triggered on a web page
-     * automatically routes through Cronet (HTTP/3 / QUIC).
+     * automatically routes through Cronet (HTTP/3 / QUIC) into Internal storage/Download.
      */
     fun attachToWebView(
         context: Context,
@@ -82,38 +85,44 @@ object VerveDownloadManager {
         val appContext = context.applicationContext
         QuicNetworkManager.initialize(appContext)
 
-        val resolvedFileName = URLUtil.guessFileName(url, contentDisposition, mimeType)
-        val targetFile = resolveUniqueTargetFile(appContext, resolvedFileName)
-        val resolvedMime = mimeType?.takeIf { it.isNotBlank() }
-            ?: guessMimeTypeFromName(targetFile.name)
-        val domain = runCatching { Uri.parse(url).host.orEmpty() }
+        val guessedFileName = URLUtil.guessFileName(url, contentDisposition, mimeType)
+        val resolvedMime = resolveMimeType(guessedFileName, mimeType)
+        val domain = runCatching { url.toUri().host.orEmpty() }
             .getOrDefault("")
             .removePrefix("www.")
             .ifBlank { "web" }
 
+        val entry = insertMediaStoreDownload(
+            context = appContext,
+            requestedName = guessedFileName,
+            mimeType = resolvedMime
+        )
+
         val id = UUID.randomUUID().toString()
         val initialItem = DownloadItem(
             id = id,
-            fileName = targetFile.name,
+            fileName = entry.displayName,
             domain = domain,
             url = url,
             downloadedBytes = 0L,
             totalBytes = contentLength.coerceAtLeast(0L),
-            status = DownloadStatus.DOWNLOADING,
-            fileType = inferDownloadFileType(targetFile.name, resolvedMime),
+            status = if (entry.contentUri != null) DownloadStatus.DOWNLOADING else DownloadStatus.FAILED,
+            fileType = inferDownloadFileType(entry.displayName, resolvedMime),
             dateGroup = "Today",
-            localFilePath = targetFile.absolutePath,
-            mimeType = resolvedMime
+            mimeType = resolvedMime,
+            contentUri = entry.contentUri?.toString()
         )
 
         _downloads.update { current -> listOf(initialItem) + current }
         _downloadStartedEvents.tryEmit(initialItem)
 
-        startOrResumeRequest(
-            appContext = appContext,
-            item = initialItem,
-            userAgent = userAgent
-        )
+        if (entry.contentUri != null) {
+            startOrResumeRequest(
+                appContext = appContext,
+                item = initialItem,
+                userAgent = userAgent
+            )
+        }
         return initialItem
     }
 
@@ -128,14 +137,25 @@ object VerveDownloadManager {
                 }
             }
             DownloadStatus.PAUSED, DownloadStatus.FAILED -> {
+                val appContext = context.applicationContext
+                val existingUri = item.contentUri?.let(Uri::parse)
+                val targetUri = existingUri ?: insertMediaStoreDownload(
+                    context = appContext,
+                    requestedName = item.fileName,
+                    mimeType = item.mimeType
+                ).contentUri ?: return
+
                 pausedIds.remove(itemId)
                 canceledIds.remove(itemId)
-                updateItem(itemId) {
-                    it.copy(status = DownloadStatus.DOWNLOADING)
-                }
+                val updatedItem = item.copy(
+                    status = DownloadStatus.DOWNLOADING,
+                    contentUri = targetUri.toString()
+                )
+                updateItem(itemId) { updatedItem }
+
                 startOrResumeRequest(
-                    appContext = context.applicationContext,
-                    item = item.copy(status = DownloadStatus.DOWNLOADING),
+                    appContext = appContext,
+                    item = updatedItem,
                     userAgent = null
                 )
             }
@@ -143,28 +163,29 @@ object VerveDownloadManager {
         }
     }
 
-    fun cancelDownload(itemId: String) {
+    fun cancelDownload(context: Context, itemId: String) {
         canceledIds.add(itemId)
         pausedIds.remove(itemId)
         activeRequests.remove(itemId)?.cancel()
 
         val removed = _downloads.value.find { it.id == itemId }
         _downloads.update { list -> list.filterNot { it.id == itemId } }
-        removed?.localFilePath?.let { path ->
-            runCatching { File(path).delete() }
+        removed?.contentUri?.let { uriString ->
+            deleteMediaStoreEntry(context.applicationContext, uriString.toUri())
         }
     }
 
-    fun deleteDownload(itemId: String) {
-        cancelDownload(itemId)
+    fun deleteDownload(context: Context, itemId: String) {
+        cancelDownload(context, itemId)
     }
 
-    fun clearCompleted() {
+    fun clearCompleted(context: Context) {
+        val appContext = context.applicationContext
         val completed = _downloads.value.filterNot { it.isInProgress }
         _downloads.update { list -> list.filter { it.isInProgress } }
         completed.forEach { item ->
-            item.localFilePath?.let { path ->
-                runCatching { File(path).delete() }
+            item.contentUri?.let { uriString ->
+                deleteMediaStoreEntry(appContext, uriString.toUri())
             }
         }
     }
@@ -174,23 +195,27 @@ object VerveDownloadManager {
         item: DownloadItem,
         userAgent: String?
     ) {
-        val targetFile = item.localFilePath?.let { File(it) }
-            ?: resolveUniqueTargetFile(appContext, item.fileName)
-        targetFile.parentFile?.mkdirs()
-
-        val existingBytes = if (targetFile.exists()) targetFile.length() else 0L
+        val contentUri = item.contentUri?.let(Uri::parse) ?: return
+        val existingBytes = getCurrentDownloadedSize(appContext, contentUri)
         val cronetEngine = QuicNetworkManager.getCronetEngine(appContext)
 
         if (cronetEngine == null) {
             executor.execute {
-                downloadWithFallbackConnection(item, targetFile, existingBytes, userAgent)
+                downloadWithFallbackConnection(
+                    appContext = appContext,
+                    item = item,
+                    contentUri = contentUri,
+                    existingBytes = existingBytes,
+                    userAgent = userAgent
+                )
             }
             return
         }
 
         val callback = CronetFileDownloadCallback(
+            appContext = appContext,
             itemId = item.id,
-            targetFile = targetFile,
+            contentUri = contentUri,
             initialOffsetBytes = existingBytes
         )
 
@@ -211,13 +236,13 @@ object VerveDownloadManager {
     }
 
     private class CronetFileDownloadCallback(
+        private val appContext: Context,
         private val itemId: String,
-        private val targetFile: File,
+        private val contentUri: Uri,
         private val initialOffsetBytes: Long
     ) : UrlRequest.Callback() {
 
-        private var outputStream: FileOutputStream? = null
-        private var channel: WritableByteChannel? = null
+        private var writableSink: WritableDownloadSink? = null
         private var downloadedBytes: Long = initialOffsetBytes
         private var totalBytes: Long = 0L
         private var negotiatedProtocol: String? = null
@@ -262,8 +287,12 @@ object VerveDownloadManager {
                 else -> 0L
             }
 
-            outputStream = FileOutputStream(targetFile, isPartialContent)
-            channel = Channels.newChannel(outputStream)
+            writableSink = openWritableDownloadSink(
+                context = appContext,
+                contentUri = contentUri,
+                append = isPartialContent,
+                offsetBytes = initialOffsetBytes
+            )
 
             updateItem(itemId) {
                 it.copy(
@@ -290,7 +319,7 @@ object VerveDownloadManager {
             byteBuffer.flip()
             val bytesWritten = byteBuffer.remaining()
             while (byteBuffer.hasRemaining()) {
-                channel?.write(byteBuffer)
+                writableSink?.channel?.write(byteBuffer)
             }
             downloadedBytes += bytesWritten
 
@@ -315,7 +344,15 @@ object VerveDownloadManager {
         override fun onSucceeded(request: UrlRequest, info: UrlResponseInfo) {
             closeStream()
             activeRequests.remove(itemId)
-            val finalSize = targetFile.length().coerceAtLeast(downloadedBytes)
+
+            finalizeMediaStoreDownload(
+                context = appContext,
+                contentUri = contentUri,
+                finalSizeBytes = downloadedBytes
+            )
+
+            val finalSize = getCurrentDownloadedSize(appContext, contentUri)
+                .coerceAtLeast(downloadedBytes)
 
             updateItem(itemId) {
                 it.copy(
@@ -351,7 +388,7 @@ object VerveDownloadManager {
             activeRequests.remove(itemId)
 
             if (canceledIds.remove(itemId)) {
-                runCatching { targetFile.delete() }
+                deleteMediaStoreEntry(appContext, contentUri)
                 _downloads.update { list -> list.filterNot { it.id == itemId } }
             } else if (pausedIds.contains(itemId)) {
                 updateItem(itemId) {
@@ -385,21 +422,20 @@ object VerveDownloadManager {
         }
 
         private fun closeStream() {
-            runCatching { channel?.close() }
-            runCatching { outputStream?.flush() }
-            runCatching { outputStream?.close() }
-            channel = null
-            outputStream = null
+            writableSink?.close()
+            writableSink = null
         }
     }
 
     private fun downloadWithFallbackConnection(
+        appContext: Context,
         item: DownloadItem,
-        targetFile: File,
+        contentUri: Uri,
         existingBytes: Long,
         userAgent: String?
     ) {
         var downloaded = existingBytes
+        var sink: WritableDownloadSink? = null
         try {
             val connection = (URL(item.url).openConnection() as HttpURLConnection).apply {
                 connectTimeout = 10_000
@@ -419,36 +455,47 @@ object VerveDownloadManager {
                 else -> 0L
             }
 
-            connection.inputStream.use { input ->
-                FileOutputStream(targetFile, isPartial).use { output ->
-                    val buffer = ByteArray(BUFFER_SIZE_BYTES)
-                    var lastUiMs = 0L
-                    while (true) {
-                        if (pausedIds.contains(item.id) || canceledIds.contains(item.id)) {
-                            break
-                        }
-                        val read = input.read(buffer)
-                        if (read == -1) break
-                        output.write(buffer, 0, read)
-                        downloaded += read
+            sink = openWritableDownloadSink(
+                context = appContext,
+                contentUri = contentUri,
+                append = isPartial,
+                offsetBytes = existingBytes
+            )
 
-                        val now = SystemClock.elapsedRealtime()
-                        if (now - lastUiMs >= UI_THROTTLE_MS) {
-                            lastUiMs = now
-                            updateItem(item.id) {
-                                it.copy(
-                                    downloadedBytes = downloaded,
-                                    totalBytes = if (total > 0L) total else it.totalBytes
-                                )
-                            }
+            connection.inputStream.use { input ->
+                val buffer = ByteArray(BUFFER_SIZE_BYTES)
+                var lastUiMs = 0L
+                while (true) {
+                    if (pausedIds.contains(item.id) || canceledIds.contains(item.id)) {
+                        break
+                    }
+                    val read = input.read(buffer)
+                    if (read == -1) break
+                    val byteBuffer = ByteBuffer.wrap(buffer, 0, read)
+                    while (byteBuffer.hasRemaining()) {
+                        sink.channel.write(byteBuffer)
+                    }
+                    downloaded += read
+
+                    val now = SystemClock.elapsedRealtime()
+                    if (now - lastUiMs >= UI_THROTTLE_MS) {
+                        lastUiMs = now
+                        updateItem(item.id) {
+                            it.copy(
+                                downloadedBytes = downloaded,
+                                totalBytes = if (total > 0L) total else it.totalBytes
+                            )
                         }
                     }
                 }
             }
 
+            sink.close()
+            sink = null
+
             when {
                 canceledIds.remove(item.id) -> {
-                    runCatching { targetFile.delete() }
+                    deleteMediaStoreEntry(appContext, contentUri)
                     _downloads.update { list -> list.filterNot { it.id == item.id } }
                 }
                 pausedIds.contains(item.id) -> {
@@ -457,7 +504,13 @@ object VerveDownloadManager {
                     }
                 }
                 else -> {
-                    val finalSize = targetFile.length().coerceAtLeast(downloaded)
+                    finalizeMediaStoreDownload(
+                        context = appContext,
+                        contentUri = contentUri,
+                        finalSizeBytes = downloaded
+                    )
+                    val finalSize = getCurrentDownloadedSize(appContext, contentUri)
+                        .coerceAtLeast(downloaded)
                     updateItem(item.id) {
                         it.copy(
                             status = DownloadStatus.COMPLETED,
@@ -469,6 +522,7 @@ object VerveDownloadManager {
                 }
             }
         } catch (_: Exception) {
+            sink?.close()
             if (!pausedIds.contains(item.id) && !canceledIds.contains(item.id)) {
                 updateItem(item.id) {
                     it.copy(status = DownloadStatus.FAILED, remainingSeconds = null)
@@ -485,29 +539,133 @@ object VerveDownloadManager {
         }
     }
 
-    private fun resolveUniqueTargetFile(context: Context, requestedName: String): File {
-        val dir = context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS)
-            ?: File(context.filesDir, "downloads")
-        dir.mkdirs()
+    private data class MediaStoreDownloadEntry(
+        val displayName: String,
+        val contentUri: Uri?
+    )
 
-        val baseName = requestedName.substringBeforeLast('.', requestedName)
-        val extension = requestedName.substringAfterLast('.', "")
-        var candidate = File(dir, requestedName)
-        var counter = 1
-        while (candidate.exists()) {
-            val numberedName = if (extension.isNotEmpty()) {
-                "$baseName ($counter).$extension"
-            } else {
-                "$baseName ($counter)"
-            }
-            candidate = File(dir, numberedName)
-            counter++
+    private class WritableDownloadSink(
+        val channel: FileChannel,
+        private val outputStream: FileOutputStream,
+        private val parcelFileDescriptor: ParcelFileDescriptor
+    ) {
+        fun close() {
+            runCatching { channel.force(false) }
+            runCatching { channel.close() }
+            runCatching { outputStream.flush() }
+            runCatching { outputStream.close() }
+            runCatching { parcelFileDescriptor.close() }
         }
-        return candidate
+    }
+
+    private fun insertMediaStoreDownload(
+        context: Context,
+        requestedName: String,
+        mimeType: String
+    ): MediaStoreDownloadEntry {
+        val resolver = context.contentResolver
+        val values = ContentValues().apply {
+            put(MediaStore.Downloads.DISPLAY_NAME, requestedName)
+            put(MediaStore.Downloads.MIME_TYPE, mimeType)
+            put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
+            put(MediaStore.Downloads.IS_PENDING, 1)
+        }
+
+        val uri = runCatching {
+            resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+        }.getOrNull() ?: return MediaStoreDownloadEntry(displayName = requestedName, contentUri = null)
+
+        val actualDisplayName = runCatching {
+            resolver.query(
+                uri,
+                arrayOf(OpenableColumns.DISPLAY_NAME),
+                null,
+                null,
+                null
+            )?.use { cursor ->
+                if (cursor.moveToFirst()) cursor.getString(0) else null
+            }
+        }.getOrNull() ?: requestedName
+
+        return MediaStoreDownloadEntry(
+            displayName = actualDisplayName,
+            contentUri = uri
+        )
+    }
+
+    private fun openWritableDownloadSink(
+        context: Context,
+        contentUri: Uri,
+        append: Boolean,
+        offsetBytes: Long
+    ): WritableDownloadSink {
+        val pfd = context.contentResolver.openFileDescriptor(contentUri, "rw")
+            ?: error("Unable to open MediaStore file descriptor for $contentUri")
+        val fos = FileOutputStream(pfd.fileDescriptor)
+        val channel = fos.channel
+        if (append && offsetBytes > 0L) {
+            channel.position(offsetBytes)
+        } else {
+            channel.truncate(0L)
+            channel.position(0L)
+        }
+        return WritableDownloadSink(
+            channel = channel,
+            outputStream = fos,
+            parcelFileDescriptor = pfd
+        )
+    }
+
+    private fun finalizeMediaStoreDownload(
+        context: Context,
+        contentUri: Uri,
+        finalSizeBytes: Long
+    ) {
+        runCatching {
+            val values = ContentValues().apply {
+                put(MediaStore.Downloads.IS_PENDING, 0)
+                if (finalSizeBytes > 0L) {
+                    put(MediaStore.Downloads.SIZE, finalSizeBytes)
+                }
+            }
+            context.contentResolver.update(contentUri, values, null, null)
+        }
+    }
+
+    private fun getCurrentDownloadedSize(context: Context, contentUri: Uri): Long {
+        return runCatching {
+            context.contentResolver.openFileDescriptor(contentUri, "r")?.use { pfd ->
+                pfd.statSize.coerceAtLeast(0L)
+            } ?: 0L
+        }.getOrDefault(0L)
+    }
+
+    private fun deleteMediaStoreEntry(context: Context, contentUri: Uri) {
+        runCatching { context.contentResolver.delete(contentUri, null, null) }
+    }
+
+    private fun resolveMimeType(fileName: String, serverMimeType: String?): String {
+        val cleanedServerMime = serverMimeType
+            ?.substringBefore(';')
+            ?.trim()
+            ?.lowercase()
+            .orEmpty()
+
+        val isGenericMime = cleanedServerMime.isBlank() ||
+                cleanedServerMime == "*/*" ||
+                cleanedServerMime == "application/octet-stream" ||
+                cleanedServerMime == "binary/octet-stream"
+
+        return if (isGenericMime) {
+            guessMimeTypeFromName(fileName)
+        } else {
+            cleanedServerMime
+        }
     }
 
     private fun guessMimeTypeFromName(fileName: String): String {
         val ext = fileName.substringAfterLast('.', "").lowercase()
+        if (ext == "apk") return "application/vnd.android.package-archive"
         return MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext) ?: "*/*"
     }
 }

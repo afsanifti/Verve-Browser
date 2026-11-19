@@ -23,7 +23,6 @@ import androidx.compose.material.icons.rounded.Public
 import androidx.compose.material.icons.rounded.SystemUpdate
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -50,7 +49,6 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import com.verve.browser.presentation.update.AppUpdateUiState
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AboutVerveScreen(
     updateState: AppUpdateUiState,
@@ -58,12 +56,19 @@ fun AboutVerveScreen(
     onUpdateClick: () -> Unit,
     onCancelDownload: () -> Unit,
     onNavigateBack: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    autoStartUpdate: Boolean = false,
+    onAutoStartUpdateHandled: () -> Unit = {}
 ) {
     val layoutDirection = LocalLayoutDirection.current
 
     LaunchedEffect(Unit) {
-        if (!updateState.isDownloading && !updateState.isChecking) {
+        if (autoStartUpdate) {
+            onAutoStartUpdateHandled()
+            if (!updateState.isDownloading) {
+                onUpdateClick()
+            }
+        } else if (!updateState.isDownloading && !updateState.isChecking) {
             onCheckForUpdates()
         }
     }

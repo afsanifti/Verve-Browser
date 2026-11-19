@@ -147,7 +147,7 @@ fun PageZoomBottomBar(
                 .fillMaxWidth()
                 .height(56.dp),
             shape = CircleShape,
-            color = MaterialTheme.colorScheme.surfaceContainerHighest,
+            color = MaterialTheme.colorScheme.primaryContainer,
             shadowElevation = 6.dp
         ) {
             Row(
@@ -171,9 +171,9 @@ fun PageZoomBottomBar(
                         imageVector = Icons.Rounded.Remove,
                         contentDescription = "Zoom out",
                         tint = if (zoomPercent > MinZoomPercent) {
-                            MaterialTheme.colorScheme.onSurface
+                            MaterialTheme.colorScheme.onPrimaryContainer
                         } else {
-                            MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f)
+                            MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.45f)
                         },
                         modifier = Modifier.size(22.dp)
                     )

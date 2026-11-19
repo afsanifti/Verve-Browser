@@ -1,73 +1,12 @@
-# Verve Browser — Release Notes
+### Significant Changes
 
+- **Find in Page:** Search for text on any webpage right from the bottom bar, complete with a live match counter and quick up/down navigation.
+- **Downloads Manager:** View, open, and share your files in a new Downloads screen, with a live progress banner at the top whenever a download starts.
+- **Faster Browsing with HTTP/3:** Added QUIC / HTTP/3 support for quicker page loads, along with a toggle in Settings.
+- **Simpler App Updates:** Tapping **Update** now takes you straight to **About Verve** and automatically starts downloading and installing the update.
 
+### Improvements & Stability
 
-## 🚀 Next-Gen Networking: QUIC & HTTP/3
-
-- **Cronet HTTP/3 Stack (`QuicNetworkManager`):** Integrated Chromium's Cronet networking engine with QUIC enabled to support encrypted UDP transport, 0-RTT/1-RTT handshakes, zero head-of-line blocking, and seamless Wi-Fi ↔ Cellular connection migration.
-
-- **Live `H3` Protocol Badge:** Added real-time Navigation Timing telemetry in `PageActionsTopBar` that displays a crisp **`H3`** indicator pill next to the active domain whenever a page loads over HTTP/3.
-
-- **QUIC Settings Toggle:** Added a **QUIC / HTTP/3** switch under **Settings → Browser** so users can toggle HTTP/3 acceleration on or off at any time.
-
-
-
----
-
-
-
-## 📥 Expressive Downloads Manager (HTTP/3 Powered)
-
-- **Cronet `UrlRequest` Download Engine (`VerveDownloadManager`):** Routed all `WebView` file downloads through Cronet over HTTP/3 (with an automatic `HttpURLConnection` fallback) for faster, more resilient transfers.
-
-- **True Pause, Resume & Retry:** Implemented HTTP `Range` header support so paused or failed downloads resume cleanly from their exact byte offset on disk without restarting.
-
-- **Material 3 Expressive Downloads UI (`DownloadsScreen`):**
-
-  - Stadium-shaped **Active Download Card** with animated circular progress, live throughput ETA, protocol telemetry (`HTTP/3`), pause/resume button, and cancel action.
-
-  - **`All` / `In progress`** filter chips and an expandable top app bar search to filter downloads by file name or source domain.
-
-  - Date-grouped download history (`Today`, `Yesterday`) built with M3 Expressive `SegmentedListItem` rows, contextual menus (**Open**, **Retry**, **Share**, **Copy link**, **Delete**), and **Clear completed**.
-
-  - Secure local file opening and sharing via Android `FileProvider`.
-
-- **Chrome-Style Top Download Banner (`TopDownloadSnackbar`):** Added an animated top floating notification banner whenever a file starts downloading, allowing one-tap navigation straight to the Downloads screen.
-
-- **Unified Cross-Route Access (`DownloadsRoute`):** Connected the Downloads manager seamlessly to both **Page Actions → Downloads** and **Settings → Downloads** with full system back-gesture (`BackHandler`) support.
-
-
-
----
-
-
-
-## 🎨 Material 3 Expressive UI & Page Actions
-
-- **Native Segmented List Actions (`PageActionsMiddleSections`):** Refactored the Page Actions bottom sheet action stack to use official Material 3 Expressive `SegmentedListItem` components (`ListItemDefaults.segmentedShapes` and `SegmentedGap`) for native corner morphing on press.
-
-- **Modular Sheet Architecture:** Organized `PageActionsBottomSheet` into clean, dedicated sub-components (`PageActionsTopBar`, `PageActionsMiddleSections`, `PageActionsBottomControls`) with modern `LocalClipboard` / `ClipEntry` link copying.
-
-
-
----
-
-
-
-## 🔍 Floating Page Zoom Bar
-
-- **Time-Sensitive Bottom Zoom Control (`PageZoomBottomBar`):** Selecting **Zoom** in Page Actions smoothly swaps the bottom search pill for a floating zoom bar synced to `WebView.settings.textZoom` per tab.
-
-- **Smart Auto-Dismiss Choreography:** Automatically returns to the bottom search pill after 3.5 seconds of inactivity or when switching tabs, focusing search, or leaving web mode.
-
-
-
----
-
-
-
-## 🛠️ Stability & Polish
-
-- **Opaque Downloads Overlay:** Eliminated background bleed-through when opening Downloads from Page Actions by enforcing solid surface backgrounds and clean vertical slide transitions.
-
-- **Lifecycle-Safe `WebView` Binding (`VerveWebView`):** Bound `VerveDownloadManager` and `QuicNetworkManager` initialization directly inside `TabWebViewPool` creation with `rememberUpdatedState` to prevent duplicate listeners or stale callbacks.
+- **Bottom Bar & Gestures:** Made the bottom bar animations smoother and refined tab-swiping previews, text zoom controls, and desktop site mode.
+- **Cleaner Icons & Menus:** Updated the site controls icon and polished the page actions menu.
+- **Bug Fixes & Reliability:** Fixed an issue where downloaded APKs would re-download instead of installing, improved back-button navigation, and added automatic cleanup for old update files.
