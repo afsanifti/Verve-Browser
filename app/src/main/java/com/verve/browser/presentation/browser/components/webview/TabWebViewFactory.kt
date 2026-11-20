@@ -10,6 +10,7 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.ViewConfiguration
 import android.webkit.CookieManager
+import android.webkit.WebChromeClient
 import android.webkit.WebSettings
 import android.webkit.WebView
 import androidx.core.view.ViewCompat
@@ -20,13 +21,35 @@ import com.verve.browser.presentation.browser.util.TabThumbnailCache
 import com.verve.browser.presentation.browser.util.TabWebViewPool
 import com.verve.browser.presentation.browser.util.WebSnapshotColorExtractor
 
+private const val IS_VIDEO_PLAYING_SCRIPT = """
+    (function() {
+        function hasPlaying(doc) {
+            if (!doc) return false;
+            var vs = doc.querySelectorAll('video');
+            for (var i = 0; i < vs.length; i++) {
+                if (!vs[i].paused && !vs[i].ended && vs[i].readyState > 2) return true;
+            }
+            var frames = doc.querySelectorAll('iframe');
+            for (var j = 0; j < frames.length; j++) {
+                try {
+                    if (hasPlaying(frames[j].contentDocument)) return true;
+                } catch (e) {}
+            }
+            return false;
+        }
+        return hasPlaying(document) ? '1' : '0';
+    })();
+"""
+
 @SuppressLint("SetJavaScriptEnabled", "ClickableViewAccessibility")
 internal fun createTabWebView(
     context: Context,
     tabId: String,
     viewModel: BrowserViewModel,
     tabWebViewPool: TabWebViewPool,
-    thumbnailCache: TabThumbnailCache
+    thumbnailCache: TabThumbnailCache,
+    onShowCustomView: (View?, WebChromeClient.CustomViewCallback?) -> Unit = { _, _ -> },
+    onHideCustomView: () -> Unit = {}
 ): WebView {
     val isTabIncognito: () -> Boolean = {
         viewModel.uiState.value.tabs.firstOrNull { it.id == tabId }?.isIncognito == true
@@ -58,7 +81,8 @@ internal fun createTabWebView(
             setSupportZoom(true)
             builtInZoomControls = true
             displayZoomControls = false
-            setSupportMultipleWindows(false)
+            setSupportMultipleWindows(true)
+            javaScriptCanOpenWindowsAutomatically = true
             mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
             userAgentString = userAgentString.replace("; wv)", ")")
             if (initialIncognito) {
@@ -187,11 +211,17 @@ internal fun createTabWebView(
             if (now - lastDomSnapshotTimestampMs < 1100L) return@Runnable
             lastDomSnapshotTimestampMs = now
 
-            val currentUrl = this@apply.url.orEmpty()
-            if (currentUrl.isNotBlank()) {
-                pageColorCache.remove(currentUrl)
+            // Avoid software WebView.draw() snapshots while a hardware video layer is actively playing
+            this@apply.evaluateJavascript(IS_VIDEO_PLAYING_SCRIPT) { result ->
+                if (isDestroyed || !canSafelyAccessWebView() || isScrollBusy()) return@evaluateJavascript
+                if (result?.contains("1") == true) return@evaluateJavascript
+
+                val currentUrl = this@apply.url.orEmpty()
+                if (currentUrl.isNotBlank()) {
+                    pageColorCache.remove(currentUrl)
+                }
+                scheduleSilentSnapshotColorExtract(0L)
             }
-            scheduleSilentSnapshotColorExtract(0L)
         }
 
         val onDomVisualMutation: () -> Unit = {
@@ -368,6 +398,7 @@ internal fun createTabWebView(
                 edgeProbeScheduler.dispose()
                 WebSnapshotColorExtractor.cancel(this@apply)
                 pageColorCache.clear()
+                onHideCustomView()
             }
         )
 
@@ -375,7 +406,9 @@ internal fun createTabWebView(
             tabId = tabId,
             viewModel = viewModel,
             edgeProbeScheduler = edgeProbeScheduler,
-            scheduleThumbnailCapture = scheduleThumbnailCapture
+            scheduleThumbnailCapture = scheduleThumbnailCapture,
+            onShowCustomViewCallback = onShowCustomView,
+            onHideCustomViewCallback = onHideCustomView
         )
     }
 }

@@ -1,5 +1,7 @@
 package com.verve.browser.presentation.browser.screen
 
+import android.view.View
+import android.webkit.WebChromeClient
 import android.webkit.WebView
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -32,6 +34,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.core.net.toUri
 import com.verve.browser.R
 import com.verve.browser.presentation.browser.BrowserUiState
 import com.verve.browser.presentation.browser.BrowserViewModel
@@ -41,7 +44,6 @@ import com.verve.browser.presentation.browser.util.TabWebViewPool
 import com.verve.browser.presentation.browser.util.WebViewThemeSync
 import com.verve.browser.presentation.theme.rememberThemeConfig
 import kotlin.math.abs
-import androidx.core.net.toUri
 
 private val TabCarouselGutterDp = 12.dp
 private val TabCarouselCardShape = RoundedCornerShape(16.dp)
@@ -58,7 +60,9 @@ internal fun BrowserWebViewport(
     thumbnailCache: TabThumbnailCache,
     onWebViewCreated: (WebView) -> Unit,
     modifier: Modifier = Modifier,
-    carouselOffsetFraction: Float = 0f
+    carouselOffsetFraction: Float = 0f,
+    onShowCustomView: (View?, WebChromeClient.CustomViewCallback?) -> Unit = { _, _ -> },
+    onHideCustomView: () -> Unit = {}
 ) {
     val density = LocalDensity.current
     val isCarouselActive = abs(carouselOffsetFraction) > 0.001f
@@ -108,6 +112,8 @@ internal fun BrowserWebViewport(
                     WebViewThemeSync.applyToWebView(createdWebView, isDarkTheme)
                     onWebViewCreated(createdWebView)
                 },
+                onShowCustomView = onShowCustomView,
+                onHideCustomView = onHideCustomView,
                 modifier = Modifier
                     .fillMaxSize()
                     .graphicsLayer {

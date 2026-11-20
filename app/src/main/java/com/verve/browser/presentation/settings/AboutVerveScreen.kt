@@ -1,5 +1,6 @@
 package com.verve.browser.presentation.settings
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -7,6 +8,10 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -322,24 +327,26 @@ fun AboutVerveScreen(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
 
-                    Spacer(modifier = Modifier.height(16.dp))
+                    // Only display progress indicator while actively checking or downloading
+                    AnimatedVisibility(
+                        visible = updateState.isDownloading || updateState.isChecking,
+                        enter = fadeIn() + expandVertically(),
+                        exit = fadeOut() + shrinkVertically()
+                    ) {
+                        Column {
+                            Spacer(modifier = Modifier.height(16.dp))
 
-                    // Expressive Wavy Progress Line
-                    val showIndeterminateWave = updateState.isChecking ||
-                            (updateState.isDownloading && (updateState.downloadedBytes <= 0L || updateState.totalBytes <= 0L))
-                    val resolvedProgress = when {
-                        showIndeterminateWave -> null
-                        updateState.isDownloading -> animatedProgress
-                        availableUpdate != null && updateState.readyApkFile != null -> 1f
-                        availableUpdate != null -> 0.14f
-                        else -> 1f
+                            val showIndeterminateWave = updateState.isChecking ||
+                                    (updateState.isDownloading && (updateState.downloadedBytes <= 0L || updateState.totalBytes <= 0L))
+                            val resolvedProgress = if (showIndeterminateWave) null else animatedProgress
+
+                            ExpressiveWavyProgressIndicator(
+                                progress = resolvedProgress,
+                                isActive = true,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
                     }
-
-                    ExpressiveWavyProgressIndicator(
-                        progress = resolvedProgress,
-                        isActive = updateState.isDownloading || updateState.isChecking,
-                        modifier = Modifier.fillMaxWidth()
-                    )
 
                     if (!updateState.errorMessage.isNullOrBlank() && availableUpdate != null) {
                         Spacer(modifier = Modifier.height(10.dp))

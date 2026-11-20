@@ -339,7 +339,14 @@ fun ExpressiveBottomToolbar(
         val leftSlotWidth = (SideSlotFullWidth - leftCompressDp) * clampedLeft
         val rightSlotWidth = (SideSlotFullWidth - rightCompressDp) * clampedRight
 
-        val targetExpandedPillWidth = (maxWidth - leftSlotWidth - rightSlotWidth)
+        // Keep home screen pill width identical to expanded browsing pill width,
+        // while still expanding smoothly to maxWidth when focused for search/find.
+        val effectiveLeftReserve = maxOf(
+            leftSlotWidth,
+            (SideSlotFullWidth - leftCompressDp) * clampedRight
+        )
+
+        val targetExpandedPillWidth = (maxWidth - effectiveLeftReserve - rightSlotWidth)
             .coerceAtLeast(collapsedPillWidth)
         val currentPillWidth = androidx.compose.ui.unit.lerp(
             start = collapsedPillWidth,

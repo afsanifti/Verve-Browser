@@ -1,7 +1,9 @@
 package com.verve.browser.presentation.browser.components
 
 import android.annotation.SuppressLint
+import android.view.View
 import android.view.ViewGroup
+import android.webkit.WebChromeClient
 import android.webkit.WebView
 import android.widget.FrameLayout
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -33,10 +35,14 @@ fun VerveWebView(
     thumbnailCache: TabThumbnailCache,
     onWebViewCreated: (WebView) -> Unit,
     modifier: Modifier = Modifier,
+    onShowCustomView: (View?, WebChromeClient.CustomViewCallback?) -> Unit = { _, _ -> },
+    onHideCustomView: () -> Unit = {},
     onDownloadStarted: (DownloadItem) -> Unit = {}
 ) {
     var attachedTabId by remember { mutableStateOf("") }
     val latestOnDownloadStarted by rememberUpdatedState(onDownloadStarted)
+    val latestOnShowCustomView by rememberUpdatedState(onShowCustomView)
+    val latestOnHideCustomView by rememberUpdatedState(onHideCustomView)
 
     val themeConfig = rememberThemeConfig()
     val isSystemDark = isSystemInDarkTheme()
@@ -63,8 +69,18 @@ fun VerveWebView(
                     tabId = tabId,
                     viewModel = viewModel,
                     tabWebViewPool = tabWebViewPool,
-                    thumbnailCache = thumbnailCache
+                    thumbnailCache = thumbnailCache,
+                    onShowCustomView = { view, callback ->
+                        latestOnShowCustomView(view, callback)
+                    },
+                    onHideCustomView = {
+                        latestOnHideCustomView()
+                    }
                 ).also { createdWebView ->
+                    createdWebView.settings.apply {
+                        setSupportMultipleWindows(true)
+                        javaScriptCanOpenWindowsAutomatically = true
+                    }
                     VerveDownloadManager.attachToWebView(
                         context = ctx,
                         webView = createdWebView,

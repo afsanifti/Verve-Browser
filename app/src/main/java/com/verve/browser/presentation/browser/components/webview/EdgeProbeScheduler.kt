@@ -73,24 +73,45 @@ internal class EdgeProbeScheduler(
                 if (vh <= 0 || vw <= 0) return '0';
                 const minTop = vh * 0.50;
                 const minBottom = vh - 56;
-                const candidates = document.querySelectorAll(
-                    'footer, nav, [role="contentinfo"], [role="navigation"], a, button, input, select, [role="button"], [role="link"], div, ul, p, span'
-                );
-                const limit = Math.min(candidates.length, 450);
-                for (let i = 0; i < limit; i++) {
-                    const el = candidates[i];
-                    const rect = el.getBoundingClientRect();
-                    if (rect.width < 12 || rect.height < 8) continue;
-                    if (rect.top < minTop || rect.bottom < minBottom || rect.top >= vh) continue;
-                    if (rect.right <= 0 || rect.left >= vw) continue;
+
+                const stack = [document.body || document.documentElement];
+                let visited = 0;
+                const maxNodes = 4000;
+
+                while (stack.length > 0 && visited < maxNodes) {
+                    const el = stack.pop();
+                    if (!el || el.nodeType !== 1) continue;
+                    visited++;
+
+                    const tag = el.tagName;
+                    if (tag === 'SCRIPT' || tag === 'STYLE' || tag === 'NOSCRIPT') continue;
+
                     const style = window.getComputedStyle(el);
-                    if (style.display === 'none' || style.visibility === 'hidden' || parseFloat(style.opacity || '1') <= 0.05) {
-                        continue;
+                    if (style.display === 'none' || style.visibility === 'hidden') continue;
+
+                    const rect = el.getBoundingClientRect();
+                    if (tag === 'VIDEO' && rect.width >= vw * 0.5 && rect.height >= vh * 0.25) {
+                        return '1';
                     }
-                    const hasText = (el.innerText || '').trim().length > 0;
-                    const isInteractive = el.matches('a,button,input,select,[role="button"],[role="link"]') ||
-                        el.querySelector('a,button,input,select,[role="button"],[role="link"],svg') !== null;
-                    if (hasText || isInteractive) return '1';
+
+                    if (rect.width >= 12 && rect.height >= 8 &&
+                        rect.top >= minTop && rect.bottom >= minBottom && rect.top < vh &&
+                        rect.right > 0 && rect.left < vw &&
+                        parseFloat(style.opacity || '1') > 0.05
+                    ) {
+                        const hasText = (el.textContent || '').trim().length > 0;
+                        const isInteractive = el.matches('footer,nav,[role="contentinfo"],[role="navigation"],a,button,input,select,[role="button"],[role="link"],svg') ||
+                            el.querySelector('a,button,input,select,[role="button"],[role="link"],svg') !== null ||
+                            el.shadowRoot !== null;
+                        if (hasText || isInteractive) return '1';
+                    }
+
+                    if (el.shadowRoot) {
+                        const srKids = el.shadowRoot.children;
+                        for (let i = 0; i < srKids.length; i++) stack.push(srKids[i]);
+                    }
+                    const kids = el.children;
+                    for (let i = 0; i < kids.length; i++) stack.push(kids[i]);
                 }
                 return '0';
             })();

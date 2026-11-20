@@ -12,6 +12,7 @@ import androidx.compose.ui.unit.IntOffset
 import com.verve.browser.presentation.browser.BrowserUiState
 import com.verve.browser.presentation.browser.BrowserViewModel
 import com.verve.browser.presentation.browser.util.TabThumbnailCache
+import com.verve.browser.presentation.browser.util.TabWebViewPool
 import com.verve.browser.presentation.downloads.TopDownloadSnackbar
 
 internal val BottomBarSlideSpring = spring<IntOffset>(
@@ -25,6 +26,7 @@ internal fun BrowserSearchOverlay(
     isOnWebPage: Boolean,
     bottomNavInsets: WindowInsets,
     webViewRef: WebView?,
+    tabWebViewPool: TabWebViewPool,
     thumbnailCache: TabThumbnailCache,
     viewModel: BrowserViewModel,
     modifier: Modifier = Modifier,
@@ -51,6 +53,7 @@ internal fun BrowserSearchOverlay(
             isOnWebPage = isOnWebPage,
             bottomNavInsets = bottomNavInsets,
             webViewRef = webViewRef,
+            tabWebViewPool = tabWebViewPool,
             thumbnailCache = thumbnailCache,
             viewModel = viewModel,
             onSwipeStarted = onSwipeStarted,

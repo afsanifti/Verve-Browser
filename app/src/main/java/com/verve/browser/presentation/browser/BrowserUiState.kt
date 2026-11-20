@@ -10,6 +10,7 @@ data class BrowserUiState(
     val searchInput: String = "",
     val isSearchFocused: Boolean = false,
     val isTabSwitcherOpen: Boolean = false,
+    val quickCloseTabId: String? = null,
     val searchSuggestions: List<String> = DEFAULT_SEARCH_SUGGESTIONS,
     val recentSearches: List<String> = DEFAULT_SEARCH_SUGGESTIONS,
     val siteSeedColor: Color? = null,
@@ -33,9 +34,6 @@ data class BrowserUiState(
 
     val isIncognito: Boolean
         get() = activeTab?.isIncognito ?: false
-
-    val isAtPageBottom: Boolean
-        get() = bottomCurtainProgress >= 0.99f || hasFixedBottomBar
 
     companion object {
         const val INITIAL_TAB_ID = "tab_initial"

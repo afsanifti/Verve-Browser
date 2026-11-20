@@ -1,8 +1,17 @@
 package com.verve.browser.presentation.browser
 
 import android.Manifest
+import android.app.Activity
+import android.content.Context
+import android.content.ContextWrapper
+import android.content.pm.ActivityInfo
 import android.os.Build
+import android.view.View
+import android.view.ViewGroup
+import android.webkit.WebChromeClient
 import android.webkit.WebView
+import android.widget.FrameLayout
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.Animatable
@@ -23,7 +32,12 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -70,6 +84,10 @@ fun BrowserScreen(
     var isSettingsOpen by remember { mutableStateOf(false) }
     var openAboutVerveDirectly by remember { mutableStateOf(false) }
     var autoStartUpdateOnAboutVerve by remember { mutableStateOf(false) }
+    var fullscreenCustomView by remember { mutableStateOf<View?>(null) }
+    var fullscreenCustomViewCallback by remember {
+        mutableStateOf<WebChromeClient.CustomViewCallback?>(null)
+    }
     val carouselOffsetFraction = remember { Animatable(0f) }
 
     val context = LocalContext.current
@@ -79,10 +97,42 @@ fun BrowserScreen(
     val tabWebViewPool = remember { TabWebViewPool() }
     val thumbnailCache = remember(context) { TabThumbnailCache(context) }
 
+    val enterFullscreenVideo: (View?, WebChromeClient.CustomViewCallback?) -> Unit = { view, callback ->
+        if (view == null) {
+            runCatching { callback?.onCustomViewHidden() }
+        } else {
+            if (fullscreenCustomView != null && fullscreenCustomView !== view) {
+                runCatching { fullscreenCustomViewCallback?.onCustomViewHidden() }
+            }
+            fullscreenCustomView = view
+            fullscreenCustomViewCallback = callback
+        }
+    }
+
+    val exitFullscreenVideo: () -> Unit = {
+        val callback = fullscreenCustomViewCallback
+        fullscreenCustomView = null
+        fullscreenCustomViewCallback = null
+        runCatching { callback?.onCustomViewHidden() }
+    }
+
     DisposableEffect(tabWebViewPool, thumbnailCache) {
         onDispose {
+            exitFullscreenVideo()
             tabWebViewPool.destroyAll()
             thumbnailCache.clear()
+        }
+    }
+
+    LaunchedEffect(uiState.activeTabId, uiState.isTabSwitcherOpen, isSettingsOpen) {
+        if (fullscreenCustomView != null && (uiState.isTabSwitcherOpen || isSettingsOpen)) {
+            exitFullscreenVideo()
+        }
+    }
+
+    LaunchedEffect(uiState.activeTabId) {
+        if (fullscreenCustomView != null) {
+            exitFullscreenVideo()
         }
     }
 
@@ -187,6 +237,9 @@ fun BrowserScreen(
     LaunchedEffect(isOnWebPage) {
         if (!isOnWebPage) {
             webViewRef = null
+            if (fullscreenCustomView != null) {
+                exitFullscreenVideo()
+            }
         }
     }
 
@@ -219,9 +272,7 @@ fun BrowserScreen(
             activeView.tag == uiState.activeTabId
         ) {
             delay(300.milliseconds)
-            if (!uiState.isTabSwitcherOpen &&
-                !isSettingsOpen &&
-                webViewRef?.tag == uiState.activeTabId
+            if (!isSettingsOpen && webViewRef?.tag == uiState.activeTabId
             ) {
                 thumbnailCache.captureFromWebView(
                     tabId = uiState.activeTabId,
@@ -263,7 +314,9 @@ fun BrowserScreen(
             tabWebViewPool = tabWebViewPool,
             thumbnailCache = thumbnailCache,
             onWebViewCreated = { webViewRef = it },
-            carouselOffsetFraction = carouselOffsetFraction.value
+            carouselOffsetFraction = carouselOffsetFraction.value,
+            onShowCustomView = enterFullscreenVideo,
+            onHideCustomView = exitFullscreenVideo
         )
 
         // LAYER 2A: Independent Adaptive Top Region (status bar + display cutout)
@@ -286,6 +339,7 @@ fun BrowserScreen(
             isOnWebPage = isOnWebPage,
             bottomNavInsets = insetsState.bottomNavInsets,
             webViewRef = webViewRef,
+            tabWebViewPool = tabWebViewPool,
             thumbnailCache = thumbnailCache,
             viewModel = viewModel,
             onSwipeStarted = {
@@ -373,5 +427,78 @@ fun BrowserScreen(
                 )
             }
         }
+
+        // LAYER 6: HTML5 Fullscreen Video Overlay
+        val activeCustomView = fullscreenCustomView
+        if (activeCustomView != null) {
+            BackHandler(enabled = true) {
+                exitFullscreenVideo()
+            }
+
+            DisposableEffect(activeCustomView) {
+                val activity = context.findActivity()
+                val window = activity?.window
+                val previousOrientation = activity?.requestedOrientation
+                    ?: ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+
+                if (window != null) {
+                    val controller = WindowCompat.getInsetsController(window, window.decorView)
+                    controller.systemBarsBehavior =
+                        WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                    controller.hide(WindowInsetsCompat.Type.systemBars())
+                }
+                activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR
+
+                onDispose {
+                    if (window != null) {
+                        val controller = WindowCompat.getInsetsController(window, window.decorView)
+                        controller.show(WindowInsetsCompat.Type.systemBars())
+                    }
+                    activity?.requestedOrientation = previousOrientation
+                }
+            }
+
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black)
+            ) {
+                AndroidView(
+                    factory = { ctx ->
+                        FrameLayout(ctx).apply {
+                            keepScreenOn = true
+                            layoutParams = ViewGroup.LayoutParams(
+                                ViewGroup.LayoutParams.MATCH_PARENT,
+                                ViewGroup.LayoutParams.MATCH_PARENT
+                            )
+                        }
+                    },
+                    update = { container ->
+                        if (activeCustomView.parent !== container) {
+                            (activeCustomView.parent as? ViewGroup)?.removeView(activeCustomView)
+                            container.removeAllViews()
+                            container.addView(
+                                activeCustomView,
+                                FrameLayout.LayoutParams(
+                                    ViewGroup.LayoutParams.MATCH_PARENT,
+                                    ViewGroup.LayoutParams.MATCH_PARENT
+                                )
+                            )
+                        }
+                    },
+                    onRelease = { container ->
+                        container.keepScreenOn = false
+                        container.removeAllViews()
+                    },
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
+        }
     }
+}
+
+private tailrec fun Context.findActivity(): Activity? = when (this) {
+    is Activity -> this
+    is ContextWrapper -> baseContext.findActivity()
+    else -> null
 }

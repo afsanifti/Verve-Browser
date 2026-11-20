@@ -39,6 +39,24 @@ object WebEdgeColorExtractor {
                     h
                 );
 
+                const detectPlayingVideo = () => {
+                    const checkDoc = (doc) => {
+                        if (!doc) return false;
+                        const vs = doc.querySelectorAll('video');
+                        for (let i = 0; i < vs.length; i++) {
+                            if (!vs[i].paused && !vs[i].ended && vs[i].readyState > 2) return true;
+                        }
+                        const frames = doc.querySelectorAll('iframe');
+                        for (let j = 0; j < frames.length; j++) {
+                            try {
+                                if (checkDoc(frames[j].contentDocument)) return true;
+                            } catch (e) {}
+                        }
+                        return false;
+                    };
+                    return checkDoc(document);
+                };
+
                 const parseRgba = (str) => {
                     if (!str || str === 'transparent') return [0, 0, 0, 0];
                     const m = str.match(/rgba?\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)(?:\s*[,\/]\s*([\d.]+))?\s*\)/i);
@@ -215,7 +233,7 @@ object WebEdgeColorExtractor {
                     let accAlpha = 0;
                     while (cur && cur.nodeType === 1) {
                         const style = window.getComputedStyle(cur);
-                        if (style && style.display !== 'none' && style.visibility !== 'hidden') {
+                        if (style && style.display !== 'none' || style.visibility === 'hidden') {
                             const opacity = Math.max(0, Math.min(1, parseFloat(style.opacity)));
                             const bg = parseRgba(style.backgroundColor);
                             const effA = bg[3] * opacity;
@@ -233,6 +251,7 @@ object WebEdgeColorExtractor {
                 const top = sampleEdge(Math.min(3, Math.max(0, h - 1)));
                 const bottom = sampleEdge(Math.max(0, h - 3));
                 const hasFixedBottomBar = detectFixedBottomBar();
+                const hasPlayingVideo = detectPlayingVideo();
                 const footerRgb = hasFixedBottomBar ? null : resolveDocumentFooter();
 
                 const metaTheme = document.querySelector('meta[name="theme-color"]');
@@ -247,6 +266,7 @@ object WebEdgeColorExtractor {
                     bc: bottom.complex,
                     f: footerRgb,
                     fb: hasFixedBottomBar,
+                    vp: hasPlayingVideo,
                     m: themeColor,
                     vh: h,
                     sh: sh,
@@ -309,6 +329,7 @@ object WebEdgeColorExtractor {
             val bottomComplex = json.optBoolean("bc", false)
             val footerRgb = parseRgbArray(json.optJSONArray("f"))
             val hasFixedBottomBar = json.optBoolean("fb", false)
+            val hasPlayingVideo = json.optBoolean("vp", false)
 
             val metaTheme = parseCssColorHex(json.optString("m", ""))
 
@@ -330,6 +351,16 @@ object WebEdgeColorExtractor {
                 footerRgb
             } else {
                 domBottom ?: footerRgb
+            }
+
+            // Avoid software WebView.draw() strip readbacks while a hardware video is playing
+            if (hasPlayingVideo) {
+                return@runCatching WebEdgeProbeResult(
+                    topColor = domTop ?: metaTheme,
+                    bottomColor = resolvedDomBottom,
+                    scrollMetrics = scrollMetrics,
+                    hasFixedBottomBar = hasFixedBottomBar
+                )
             }
 
             val needTopStrip = topComplex || !topOpaque || domTop == null

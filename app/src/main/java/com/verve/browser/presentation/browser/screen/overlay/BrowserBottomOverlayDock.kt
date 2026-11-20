@@ -28,10 +28,12 @@ import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.unit.dp
 import com.verve.browser.presentation.browser.BrowserUiState
 import com.verve.browser.presentation.browser.BrowserViewModel
+import com.verve.browser.presentation.browser.components.searchpill.BlankTabQuickClosePill
 import com.verve.browser.presentation.browser.components.searchpill.ExpressiveBottomToolbar
 import com.verve.browser.presentation.browser.components.searchpill.SearchSuggestionsList
 import com.verve.browser.presentation.browser.components.searchpill.pageactions.PageZoomBottomBar
 import com.verve.browser.presentation.browser.util.TabThumbnailCache
+import com.verve.browser.presentation.browser.util.TabWebViewPool
 
 @Composable
 internal fun BoxScope.BrowserBottomOverlayDock(
@@ -40,6 +42,7 @@ internal fun BoxScope.BrowserBottomOverlayDock(
     isOnWebPage: Boolean,
     bottomNavInsets: WindowInsets,
     webViewRef: WebView?,
+    tabWebViewPool: TabWebViewPool,
     thumbnailCache: TabThumbnailCache,
     viewModel: BrowserViewModel,
     onSwipeStarted: () -> Unit,
@@ -81,7 +84,7 @@ internal fun BoxScope.BrowserBottomOverlayDock(
         )
     }
 
-    // Suggestions list + floating bottom pill toolbar (expands bilaterally into Find-in-Page)
+    // Suggestions list + quick-close pill + floating bottom pill toolbar
     AnimatedVisibility(
         visible = !overlayState.isZoomBarVisible,
         enter = slideInVertically(
@@ -120,6 +123,20 @@ internal fun BoxScope.BrowserBottomOverlayDock(
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)
                 )
             }
+
+            BlankTabQuickClosePill(
+                visible = uiState.quickCloseTabId != null &&
+                        uiState.quickCloseTabId == uiState.activeTabId &&
+                        !uiState.isSearchFocused &&
+                        !overlayState.isFindInPageVisible,
+                onCloseClick = {
+                    viewModel.confirmQuickCloseTab { closedId ->
+                        tabWebViewPool.resetTab(closedId)
+                        thumbnailCache.remove(closedId)
+                    }
+                },
+                modifier = Modifier.align(Alignment.CenterHorizontally)
+            )
 
             ExpressiveBottomToolbar(
                 inputText = uiState.searchInput,

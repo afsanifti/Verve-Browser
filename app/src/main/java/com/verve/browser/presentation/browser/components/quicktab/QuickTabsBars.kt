@@ -119,8 +119,8 @@ internal fun QuickTabsBottomBar(
         Surface(
             onClick = onNewTabClick,
             modifier = Modifier
-                .width(76.dp)
-                .height(56.dp),
+                .width(92.dp)
+                .height(72.dp),
             shape = CircleShape,
             color = MaterialTheme.colorScheme.primaryContainer,
             shadowElevation = 3.dp
@@ -133,7 +133,7 @@ internal fun QuickTabsBottomBar(
                     imageVector = QuickTabSymbols.Add,
                     contentDescription = "New tab",
                     tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                    modifier = Modifier.size(26.dp)
+                    modifier = Modifier.size(32.dp)
                 )
             }
         }

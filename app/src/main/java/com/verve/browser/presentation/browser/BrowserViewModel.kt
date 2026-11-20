@@ -13,6 +13,8 @@ import com.verve.browser.presentation.browser.viewmodel.TabSessionController
 import com.verve.browser.presentation.browser.viewmodel.ToolbarAndCurtainController
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -40,6 +42,8 @@ class BrowserViewModel(
     private val toolbarAndCurtainController = ToolbarAndCurtainController(uiState = _uiState)
     private val pageAppearanceController = PageAppearanceAndProgressController(uiState = _uiState)
     private val tabSessionController = TabSessionController(uiState = _uiState)
+
+    private var quickCloseJob: Job? = null
 
     init {
         tabSessionStorage.loadSync()?.let { restored ->
@@ -82,7 +86,10 @@ class BrowserViewModel(
         }
     }
 
-    fun openTabSwitcher() = tabSessionController.openTabSwitcher()
+    fun openTabSwitcher() {
+        dismissQuickClosePrompt()
+        tabSessionController.openTabSwitcher()
+    }
 
     fun closeTabSwitcher() = tabSessionController.closeTabSwitcher()
 
@@ -91,6 +98,7 @@ class BrowserViewModel(
         isIncognito: Boolean = false,
         stackId: String? = null
     ): String {
+        dismissQuickClosePrompt()
         searchSuggestionsController.cancelPendingSuggestions()
         return tabSessionController.createNewTab(
             initialUrl = initialUrl,
@@ -99,12 +107,60 @@ class BrowserViewModel(
         )
     }
 
+    fun openBlankTargetUrl(url: String, sourceTabId: String? = null) {
+        val trimmedUrl = url.trim()
+        if (trimmedUrl.isEmpty() || trimmedUrl == "about:blank") return
+
+        val openerTab = _uiState.value.tabs.firstOrNull {
+            it.id == (sourceTabId ?: _uiState.value.activeTabId)
+        }
+        val newTabId = createNewTab(
+            initialUrl = trimmedUrl,
+            isIncognito = openerTab?.isIncognito ?: false,
+            stackId = openerTab?.stackId
+        )
+        triggerQuickClosePrompt(newTabId)
+    }
+
+    private fun triggerQuickClosePrompt(tabId: String) {
+        quickCloseJob?.cancel()
+        _uiState.update { it.copy(quickCloseTabId = tabId) }
+        quickCloseJob = viewModelScope.launch {
+            delay(5000L.milliseconds)
+            _uiState.update { state ->
+                if (state.quickCloseTabId == tabId) {
+                    state.copy(quickCloseTabId = null)
+                } else {
+                    state
+                }
+            }
+        }
+    }
+
+    fun confirmQuickCloseTab(onTabClosed: (String) -> Unit = {}) {
+        val targetTabId = _uiState.value.quickCloseTabId ?: return
+        dismissQuickClosePrompt()
+        closeTab(tabId = targetTabId, onTabClosed = onTabClosed)
+    }
+
+    fun dismissQuickClosePrompt() {
+        quickCloseJob?.cancel()
+        quickCloseJob = null
+        if (_uiState.value.quickCloseTabId != null) {
+            _uiState.update { it.copy(quickCloseTabId = null) }
+        }
+    }
+
     fun switchToTab(tabId: String) {
+        dismissQuickClosePrompt()
         searchSuggestionsController.cancelPendingSuggestions()
         tabSessionController.switchToTab(tabId)
     }
 
     fun closeTab(tabId: String, onTabClosed: (String) -> Unit = {}) {
+        if (_uiState.value.quickCloseTabId == tabId) {
+            dismissQuickClosePrompt()
+        }
         tabSessionController.closeTab(tabId = tabId, onTabClosed = onTabClosed)
     }
 
@@ -225,6 +281,7 @@ class BrowserViewModel(
         pageAppearanceController.updateBottomRegionColor(tabId = tabId, color = color)
 
     fun navigateHome() {
+        dismissQuickClosePrompt()
         searchSuggestionsController.cancelPendingSuggestions()
         tabSessionController.navigateHome()
     }
