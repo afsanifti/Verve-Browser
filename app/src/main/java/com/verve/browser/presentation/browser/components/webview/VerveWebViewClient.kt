@@ -6,7 +6,6 @@ import android.content.Intent
 import android.graphics.Bitmap
 import android.net.Uri
 import android.net.http.SslError
-import android.text.TextUtils
 import android.webkit.RenderProcessGoneDetail
 import android.webkit.SslErrorHandler
 import android.webkit.WebResourceError
@@ -19,6 +18,8 @@ import com.verve.browser.presentation.browser.util.TabPageColorCache
 import com.verve.browser.presentation.browser.util.TabWebViewPool
 import com.verve.browser.presentation.browser.util.WebSnapshotColorExtractor
 import java.io.ByteArrayInputStream
+import androidx.core.net.toUri
+import androidx.core.text.htmlEncode
 
 internal class VerveWebViewClient(
     private val tabId: String,
@@ -63,7 +64,12 @@ internal class VerveWebViewClient(
                 Intent.parseUri(uri.toString(), Intent.URI_INTENT_SCHEME)
             }.getOrNull() ?: return true
 
+            // Prevent webpages from targeting internal app components or selectors
+            parsedIntent.addCategory(Intent.CATEGORY_BROWSABLE)
+            parsedIntent.component = null
+            parsedIntent.selector = null
             parsedIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+
             val launched = runCatching {
                 context.startActivity(parsedIntent)
                 true
@@ -71,8 +77,22 @@ internal class VerveWebViewClient(
 
             if (!launched) {
                 val fallbackUrl = parsedIntent.getStringExtra("browser_fallback_url")
-                if (!fallbackUrl.isNullOrBlank()) {
+                val fallbackScheme = fallbackUrl?.let { it.toUri().scheme?.lowercase() }
+                if (!fallbackUrl.isNullOrBlank() && (fallbackScheme == "http" || fallbackScheme == "https")) {
                     webView.loadUrl(fallbackUrl)
+                } else {
+                    val targetPackage = parsedIntent.`package`
+                    if (!targetPackage.isNullOrBlank()) {
+                        runCatching {
+                            val marketIntent = Intent(
+                                Intent.ACTION_VIEW,
+                                "market://details?id=$targetPackage".toUri()
+                            ).apply {
+                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            }
+                            context.startActivity(marketIntent)
+                        }
+                    }
                 }
             }
             return true
@@ -80,6 +100,7 @@ internal class VerveWebViewClient(
 
         runCatching {
             val intent = Intent(Intent.ACTION_VIEW, uri).apply {
+                addCategory(Intent.CATEGORY_BROWSABLE)
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
             context.startActivity(intent)
@@ -312,7 +333,7 @@ internal class VerveWebViewClient(
         isDnsError: Boolean
     ): Boolean {
         if (failedUrl.isBlank()) return false
-        val parsed = runCatching { Uri.parse(failedUrl) }.getOrNull() ?: return false
+        val parsed = runCatching { failedUrl.toUri() }.getOrNull() ?: return false
         val scheme = parsed.scheme?.lowercase().orEmpty()
         val host = parsed.host?.lowercase().orEmpty()
         if (host.isEmpty()) return false
@@ -408,7 +429,7 @@ internal class VerveWebViewClient(
         )
     }
 
-    private fun escapeHtml(raw: String): String = TextUtils.htmlEncode(raw)
+    private fun escapeHtml(raw: String): String = raw.htmlEncode()
 
     override fun shouldInterceptRequest(
         view: WebView?,
@@ -437,7 +458,10 @@ internal class VerveWebViewClient(
                 val blockedHtml = """
                     <!DOCTYPE html>
                     <html>
-                    <head><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
+                    <head>
+                        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                        <meta name="color-scheme" content="light dark">
+                    </head>
                     <body style="font-family:system-ui;padding:32px 24px;background:Canvas;color:CanvasText;">
                         <h3>Page blocked by Verve Shield</h3>
                         <p style="opacity:0.75;word-break:break-all;">${escapeHtml(reqUrl)}</p>

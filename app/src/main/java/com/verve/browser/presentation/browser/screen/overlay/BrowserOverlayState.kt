@@ -34,6 +34,7 @@ internal class BrowserOverlayState(
     var currentWebView by mutableStateOf<WebView?>(null)
 
     var isPageActionsSheetOpen by mutableStateOf(false)
+    var isSiteControlsSheetOpen by mutableStateOf(false)
     var isDownloadsScreenOpen by mutableStateOf(false)
 
     // Top Chrome-style download snackbar state
@@ -140,6 +141,7 @@ internal fun rememberBrowserOverlayState(
         state.isQuicConnection = false
         state.isTranslated = false
         state.isReaderMode = false
+        state.isSiteControlsSheetOpen = false
     }
     LaunchedEffect(uiState.currentUrl) {
         state.isBookmarked = false

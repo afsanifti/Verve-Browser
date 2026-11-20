@@ -8,6 +8,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.edit
 import com.materialkolor.PaletteStyle
+import com.verve.browser.presentation.browser.util.WebViewThemeSync
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -122,7 +123,8 @@ object ThemePreferences {
 
     @Synchronized
     private fun loadFromDisk(context: Context): ThemeConfig {
-        val prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val appContext = context.applicationContext
+        val prefs = appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         val styleName = prefs.getString(KEY_THEME_STYLE, AppThemeStyle.SYSTEM.name)
         val darkModeName = prefs.getString(KEY_DARK_MODE, AppDarkMode.SYSTEM.name)
 
@@ -131,6 +133,7 @@ object ThemePreferences {
             darkMode = AppDarkMode.entries.firstOrNull { it.name == darkModeName } ?: AppDarkMode.SYSTEM
         )
         _config.value = loaded
+        WebViewThemeSync.applyAppNightMode(appContext, loaded.darkMode)
         return loaded
     }
 
@@ -148,14 +151,16 @@ object ThemePreferences {
 
     @Synchronized
     fun setDarkMode(context: Context, darkMode: AppDarkMode) {
-        val current = getConfig(context)
+        val appContext = context.applicationContext
+        val current = getConfig(appContext)
         val updated = current.copy(darkMode = darkMode)
-        context.applicationContext
+        appContext
             .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             .edit {
                 putString(KEY_DARK_MODE, darkMode.name)
             }
         _config.value = updated
+        WebViewThemeSync.applyAppNightMode(appContext, darkMode)
     }
 }
 

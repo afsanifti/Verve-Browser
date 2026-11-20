@@ -1,4 +1,4 @@
-package com.verve.browser.presentation.browser.components
+package com.verve.browser.presentation.browser.components.quicktab
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -11,14 +11,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.ArrowBack
-import androidx.compose.material.icons.rounded.Add
-import androidx.compose.material.icons.rounded.GridView
-import androidx.compose.material.icons.rounded.History
-import androidx.compose.material.icons.rounded.Layers
-import androidx.compose.material.icons.rounded.Settings
-import androidx.compose.material.icons.rounded.ViewCarousel
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -49,7 +41,7 @@ internal fun QuickTabsTopBar(
     ) {
         IconButton(onClick = onBackClick) {
             Icon(
-                imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
+                imageVector = QuickTabSymbols.ArrowBack,
                 contentDescription = "Back to browser",
                 tint = MaterialTheme.colorScheme.onSurface,
                 modifier = Modifier.size(24.dp)
@@ -71,7 +63,7 @@ internal fun QuickTabsTopBar(
 
         IconButton(onClick = onHistoryClick) {
             Icon(
-                imageVector = Icons.Rounded.History,
+                imageVector = QuickTabSymbols.History,
                 contentDescription = "History",
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.size(24.dp)
@@ -80,7 +72,7 @@ internal fun QuickTabsTopBar(
 
         IconButton(onClick = onLayoutToggleClick) {
             Icon(
-                imageVector = if (isGridView) Icons.Rounded.ViewCarousel else Icons.Rounded.GridView,
+                imageVector = if (isGridView) QuickTabSymbols.ViewCarousel else QuickTabSymbols.GridView,
                 contentDescription = if (isGridView) "Switch to carousel view" else "Switch to grid view",
                 tint = if (isGridView) {
                     MaterialTheme.colorScheme.primary
@@ -113,7 +105,7 @@ internal fun QuickTabsBottomBar(
             modifier = Modifier.size(48.dp)
         ) {
             Icon(
-                imageVector = Icons.Rounded.Layers,
+                imageVector = if (hasStacks) QuickTabSymbols.LayersFilled else QuickTabSymbols.Layers,
                 contentDescription = "Tab stacks",
                 tint = if (hasStacks) {
                     MaterialTheme.colorScheme.primary
@@ -138,7 +130,7 @@ internal fun QuickTabsBottomBar(
                 modifier = Modifier.fillMaxSize()
             ) {
                 Icon(
-                    imageVector = Icons.Rounded.Add,
+                    imageVector = QuickTabSymbols.Add,
                     contentDescription = "New tab",
                     tint = MaterialTheme.colorScheme.onPrimaryContainer,
                     modifier = Modifier.size(26.dp)
@@ -151,7 +143,7 @@ internal fun QuickTabsBottomBar(
             modifier = Modifier.size(48.dp)
         ) {
             Icon(
-                imageVector = Icons.Rounded.Settings,
+                imageVector = QuickTabSymbols.Settings,
                 contentDescription = "Settings",
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.size(24.dp)

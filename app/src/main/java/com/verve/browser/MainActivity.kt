@@ -23,6 +23,7 @@ import com.verve.browser.presentation.theme.VerveBrowserTheme
 class MainActivity : ComponentActivity() {
 
     private var openUpdateSheetTrigger by mutableStateOf(false)
+    private var browserViewModel: BrowserViewModel? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         ThemePreferences.init(this)
@@ -51,6 +52,9 @@ class MainActivity : ComponentActivity() {
         }
 
         val viewModel = ViewModelProvider(this, viewModelFactory)[BrowserViewModel::class.java]
+        browserViewModel = viewModel
+
+        handleIncomingBrowserIntent(intent)
 
         setContent {
             val uiState by viewModel.uiState.collectAsState()
@@ -74,6 +78,7 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         handleUpdateNotificationIntent(intent)
+        handleIncomingBrowserIntent(intent)
     }
 
     private fun handleUpdateNotificationIntent(intent: Intent?) {
@@ -81,5 +86,26 @@ class MainActivity : ComponentActivity() {
             intent.removeExtra(UpdateNotificationHelper.EXTRA_OPEN_UPDATE_SHEET)
             openUpdateSheetTrigger = true
         }
+    }
+
+    private fun handleIncomingBrowserIntent(intent: Intent?) {
+        if (intent?.action != Intent.ACTION_VIEW) return
+        val url = intent.dataString?.takeIf { it.isNotBlank() } ?: return
+        val scheme = intent.data?.scheme?.lowercase()
+        if (scheme != "http" && scheme != "https") return
+
+        // Consume the intent so activity recreation doesn't re-open the same external link
+        intent.action = null
+        intent.data = null
+
+        val viewModel = browserViewModel ?: return
+        val currentState = viewModel.uiState.value
+        if (currentState.isTabSwitcherOpen) {
+            viewModel.closeTabSwitcher()
+        }
+        if (currentState.currentUrl.isNotEmpty() || currentState.isIncognito) {
+            viewModel.createNewTab(isIncognito = false)
+        }
+        viewModel.onUrlSubmitted(url)
     }
 }

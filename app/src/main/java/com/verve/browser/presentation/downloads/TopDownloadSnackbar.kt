@@ -19,10 +19,6 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.CheckCircle
-import androidx.compose.material.icons.rounded.Close
-import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -93,7 +89,7 @@ fun TopDownloadSnackbar(
                     ) {
                         if (isCompleted) {
                             Icon(
-                                imageVector = Icons.Rounded.CheckCircle,
+                                imageVector = DownloadsSymbols.CheckCircle,
                                 contentDescription = null,
                                 tint = MaterialTheme.colorScheme.primary,
                                 modifier = Modifier.size(24.dp)
@@ -117,7 +113,7 @@ fun TopDownloadSnackbar(
                                 )
                             }
                             Icon(
-                                imageVector = Icons.Rounded.Download,
+                                imageVector = DownloadsSymbols.Download,
                                 contentDescription = null,
                                 tint = MaterialTheme.colorScheme.primary,
                                 modifier = Modifier.size(16.dp)
@@ -170,7 +166,7 @@ fun TopDownloadSnackbar(
                         modifier = Modifier.size(36.dp)
                     ) {
                         Icon(
-                            imageVector = Icons.Rounded.Close,
+                            imageVector = DownloadsSymbols.Close,
                             contentDescription = "Dismiss notification",
                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.size(18.dp)

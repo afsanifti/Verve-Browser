@@ -1,4 +1,4 @@
-package com.verve.browser.presentation.browser.components.searchpill
+package com.verve.browser.presentation.browser.components.searchpill.pageactions
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -20,9 +20,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Add
-import androidx.compose.material.icons.rounded.Remove
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -168,7 +165,7 @@ fun PageZoomBottomBar(
                     modifier = Modifier.size(44.dp)
                 ) {
                     Icon(
-                        imageVector = Icons.Rounded.Remove,
+                        imageVector = PageActionsSymbols.Remove,
                         contentDescription = "Zoom out",
                         tint = if (zoomPercent > MinZoomPercent) {
                             MaterialTheme.colorScheme.onPrimaryContainer
@@ -190,9 +187,9 @@ fun PageZoomBottomBar(
                     },
                     valueRange = MinZoomPercent.toFloat()..MaxZoomPercent.toFloat(),
                     colors = SliderDefaults.colors(
-                        thumbColor = MaterialTheme.colorScheme.primary,
-                        activeTrackColor = MaterialTheme.colorScheme.primary,
-                        inactiveTrackColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.24f)
+                        thumbColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                        activeTrackColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                        inactiveTrackColor = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.24f)
                     ),
                     modifier = Modifier
                         .weight(1f)
@@ -210,7 +207,7 @@ fun PageZoomBottomBar(
                     modifier = Modifier.size(44.dp)
                 ) {
                     Icon(
-                        imageVector = Icons.Rounded.Add,
+                        imageVector = PageActionsSymbols.Add,
                         contentDescription = "Zoom in",
                         tint = if (zoomPercent < MaxZoomPercent) {
                             MaterialTheme.colorScheme.onSurface

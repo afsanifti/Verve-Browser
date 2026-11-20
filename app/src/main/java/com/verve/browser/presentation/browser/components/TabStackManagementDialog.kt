@@ -17,6 +17,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.verve.browser.presentation.browser.BrowserTab
 import com.verve.browser.presentation.browser.TabStack
+import com.verve.browser.presentation.browser.components.quicktab.resolveTabChipLabel
 
 @Composable
 internal fun TabStackManagementDialog(

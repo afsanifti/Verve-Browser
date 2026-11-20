@@ -1,4 +1,4 @@
-package com.verve.browser.presentation.browser.components
+package com.verve.browser.presentation.browser.components.quicktab
 
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -35,6 +35,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.verve.browser.presentation.browser.BrowserTab
 import com.verve.browser.presentation.browser.TabStack
+import com.verve.browser.presentation.browser.components.TabStackManagementDialog
 import com.verve.browser.presentation.theme.VerveBrowserTheme
 
 private const val ReferenceDeviceWidthDp = 412f

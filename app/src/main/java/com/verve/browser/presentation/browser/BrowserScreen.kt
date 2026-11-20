@@ -28,7 +28,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.verve.browser.data.update.UpdateNotificationHelper
-import com.verve.browser.presentation.browser.components.QuickTabsScreen
+import com.verve.browser.presentation.browser.components.quicktab.QuickTabsScreen
 import com.verve.browser.presentation.browser.screen.BrowserBackHandler
 import com.verve.browser.presentation.browser.screen.BrowserBottomProgressiveCurtain
 import com.verve.browser.presentation.browser.screen.BrowserSystemBarSync

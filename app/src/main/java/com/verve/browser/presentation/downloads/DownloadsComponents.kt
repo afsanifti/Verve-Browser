@@ -15,29 +15,15 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.ArrowBack
-import androidx.compose.material.icons.automirrored.rounded.OpenInNew
-import androidx.compose.material.icons.rounded.Check
-import androidx.compose.material.icons.rounded.Close
-import androidx.compose.material.icons.rounded.DeleteOutline
-import androidx.compose.material.icons.rounded.Download
-import androidx.compose.material.icons.rounded.FolderZip
-import androidx.compose.material.icons.rounded.Link
-import androidx.compose.material.icons.rounded.MoreVert
-import androidx.compose.material.icons.rounded.Pause
-import androidx.compose.material.icons.rounded.PlayArrow
-import androidx.compose.material.icons.rounded.Search
-import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.ListItemColors
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SegmentedListItem
@@ -106,7 +92,7 @@ internal fun DownloadsTopBar(
                 }
             ) {
                 Icon(
-                    imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
+                    imageVector = DownloadsSymbols.ArrowBack,
                     contentDescription = if (isSearchActive) "Close search" else "Navigate back"
                 )
             }
@@ -136,9 +122,8 @@ internal fun DownloadsTopBar(
             } else {
                 Text(
                     text = "Downloads",
-                    style = MaterialTheme.typography.titleLarge.copy(
-                        fontSize = 22.sp,
-                        fontWeight = FontWeight.Normal
+                    style = MaterialTheme.typography.headlineSmall.copy(
+                        fontWeight = FontWeight.Medium
                     )
                 )
             }
@@ -148,7 +133,7 @@ internal fun DownloadsTopBar(
                 if (searchQuery.isNotEmpty()) {
                     IconButton(onClick = { onSearchQueryChange("") }) {
                         Icon(
-                            imageVector = Icons.Rounded.Close,
+                            imageVector = DownloadsSymbols.Close,
                             contentDescription = "Clear search query"
                         )
                     }
@@ -156,7 +141,7 @@ internal fun DownloadsTopBar(
             } else {
                 IconButton(onClick = { onSearchActiveChange(true) }) {
                     Icon(
-                        imageVector = Icons.Rounded.Search,
+                        imageVector = DownloadsSymbols.Search,
                         contentDescription = "Search downloads"
                     )
                 }
@@ -164,7 +149,7 @@ internal fun DownloadsTopBar(
                 Box {
                     IconButton(onClick = { isOverflowExpanded = true }) {
                         Icon(
-                            imageVector = Icons.Rounded.MoreVert,
+                            imageVector = DownloadsSymbols.MoreVert,
                             contentDescription = "More options"
                         )
                     }
@@ -178,7 +163,7 @@ internal fun DownloadsTopBar(
                             enabled = hasCompletedDownloads,
                             leadingIcon = {
                                 Icon(
-                                    imageVector = Icons.Rounded.DeleteOutline,
+                                    imageVector = DownloadsSymbols.Delete,
                                     contentDescription = null
                                 )
                             },
@@ -231,7 +216,7 @@ internal fun DownloadsFilterRow(
                 leadingIcon = if (isSelected) {
                     {
                         Icon(
-                            imageVector = Icons.Rounded.Check,
+                            imageVector = DownloadsSymbols.Check,
                             contentDescription = null,
                             modifier = Modifier.size(18.dp)
                         )
@@ -330,7 +315,7 @@ internal fun ActiveDownloadCard(
 
             IconButton(onClick = onCancelClick) {
                 Icon(
-                    imageVector = Icons.Rounded.Close,
+                    imageVector = DownloadsSymbols.Close,
                     contentDescription = "Cancel download",
                     tint = contentColor,
                     modifier = Modifier.size(20.dp)
@@ -348,9 +333,9 @@ internal fun ActiveDownloadCard(
                 Box(contentAlignment = Alignment.Center) {
                     Icon(
                         imageVector = if (item.status == DownloadStatus.PAUSED) {
-                            Icons.Rounded.PlayArrow
+                            DownloadsSymbols.PlayArrow
                         } else {
-                            Icons.Rounded.Pause
+                            DownloadsSymbols.Pause
                         },
                         contentDescription = if (item.status == DownloadStatus.PAUSED) {
                             "Resume download"
@@ -417,7 +402,7 @@ private fun DownloadHistorySegmentedRow(
     item: DownloadItem,
     index: Int,
     count: Int,
-    colors: androidx.compose.material3.ListItemColors,
+    colors: ListItemColors,
     onClick: () -> Unit,
     onShareClick: () -> Unit,
     onCopyLinkClick: () -> Unit,
@@ -467,7 +452,7 @@ private fun DownloadHistorySegmentedRow(
             Box {
                 IconButton(onClick = { isMenuOpen = true }) {
                     Icon(
-                        imageVector = Icons.Rounded.MoreVert,
+                        imageVector = DownloadsSymbols.MoreVert,
                         contentDescription = "Download options for ${item.fileName}",
                         tint = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -480,7 +465,7 @@ private fun DownloadHistorySegmentedRow(
                     DropdownMenuItem(
                         text = { Text("Open") },
                         leadingIcon = {
-                            Icon(Icons.AutoMirrored.Rounded.OpenInNew, contentDescription = null)
+                            Icon(DownloadsSymbols.OpenInNew, contentDescription = null)
                         },
                         onClick = {
                             isMenuOpen = false
@@ -490,7 +475,7 @@ private fun DownloadHistorySegmentedRow(
                     DropdownMenuItem(
                         text = { Text("Share") },
                         leadingIcon = {
-                            Icon(Icons.Rounded.Share, contentDescription = null)
+                            Icon(DownloadsSymbols.Share, contentDescription = null)
                         },
                         onClick = {
                             isMenuOpen = false
@@ -500,7 +485,7 @@ private fun DownloadHistorySegmentedRow(
                     DropdownMenuItem(
                         text = { Text("Copy link") },
                         leadingIcon = {
-                            Icon(Icons.Rounded.Link, contentDescription = null)
+                            Icon(DownloadsSymbols.Link, contentDescription = null)
                         },
                         onClick = {
                             isMenuOpen = false
@@ -510,7 +495,7 @@ private fun DownloadHistorySegmentedRow(
                     DropdownMenuItem(
                         text = { Text("Delete") },
                         leadingIcon = {
-                            Icon(Icons.Rounded.DeleteOutline, contentDescription = null)
+                            Icon(DownloadsSymbols.Delete, contentDescription = null)
                         },
                         onClick = {
                             isMenuOpen = false
@@ -524,6 +509,6 @@ private fun DownloadHistorySegmentedRow(
 }
 
 private fun fileTypeLeadingIcon(fileType: DownloadFileType): ImageVector = when (fileType) {
-    DownloadFileType.ARCHIVE -> Icons.Rounded.FolderZip
-    else -> Icons.Rounded.Download
+    DownloadFileType.ARCHIVE -> DownloadsSymbols.FolderZip
+    else -> DownloadsSymbols.Download
 }

@@ -77,7 +77,7 @@ android {
         release {
             signingConfig = signingConfigs.findByName("release")
             optimization {
-                enable = false
+                enable = true
             }
         }
     }
@@ -102,15 +102,17 @@ dependencies {
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
-    implementation("androidx.work:work-runtime-ktx:2.12.0")
+    implementation(libs.androidx.work.runtime.ktx)
 
-    implementation("androidx.webkit:webkit:1.18.0")
-    implementation("com.google.android.gms:play-services-cronet:18.1.1")
-    implementation("org.chromium.net:cronet-api:500.1.0")
+    implementation(libs.androidx.webkit)
+    implementation(libs.play.services.cronet)
+    implementation(libs.cronet.api)
 
     implementation(libs.materialKolor.material3)
     implementation(libs.compose.material3)
-    implementation("androidx.compose.material:material-icons-extended:1.7.8")
+    implementation(libs.icons.material.symbols.rounded.cmp)
+    implementation(libs.icons.material.symbols.outlined.cmp)
+    implementation(libs.icons.material.symbols.rounded.filled.cmp)
 
     testImplementation("io.mockk:mockk:1.13.12")
     testImplementation("com.google.truth:truth:1.4.2")

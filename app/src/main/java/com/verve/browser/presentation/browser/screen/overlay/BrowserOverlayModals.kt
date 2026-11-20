@@ -12,6 +12,7 @@ import androidx.compose.ui.Modifier
 import com.verve.browser.presentation.browser.BrowserUiState
 import com.verve.browser.presentation.browser.BrowserViewModel
 import com.verve.browser.presentation.browser.components.searchpill.PageActionsBottomSheet
+import com.verve.browser.presentation.browser.components.searchpill.pageactions.SiteControlsBottomSheet
 import com.verve.browser.presentation.browser.util.TabThumbnailCache
 import com.verve.browser.presentation.downloads.DownloadsRoute
 
@@ -61,7 +62,10 @@ internal fun BrowserOverlayModals(
                 overlayState.translateLanguage =
                     if (overlayState.translateLanguage == "English") "Bengali" else "English"
             },
-            onSiteControlsClick = onSiteControlsClick,
+            onSiteControlsClick = {
+                overlayState.isSiteControlsSheetOpen = true
+                onSiteControlsClick()
+            },
             onFindOnPageClick = {
                 overlayState.openFindInPage()
                 onFindOnPageClick()
@@ -102,6 +106,15 @@ internal fun BrowserOverlayModals(
             onReaderModeToggle = { reader ->
                 overlayState.isReaderMode = reader
             }
+        )
+    }
+
+    if (overlayState.isSiteControlsSheetOpen) {
+        SiteControlsBottomSheet(
+            currentUrl = uiState.currentUrl,
+            webView = webViewRef,
+            isQuicConnection = overlayState.isQuicEnabled && overlayState.isQuicConnection,
+            onDismissRequest = { overlayState.isSiteControlsSheetOpen = false }
         )
     }
 

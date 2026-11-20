@@ -1,4 +1,4 @@
-package com.verve.browser.presentation.browser.components
+package com.verve.browser.presentation.browser.components.quicktab
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
@@ -24,10 +24,6 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Close
-import androidx.compose.material.icons.rounded.KeyboardArrowDown
-import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -108,7 +104,7 @@ internal fun ActiveTabDomainChip(
             Spacer(modifier = Modifier.width(6.dp))
 
             Icon(
-                imageVector = Icons.Rounded.KeyboardArrowDown,
+                imageVector = QuickTabSymbols.KeyboardArrowDown,
                 contentDescription = "Active tab",
                 tint = contentColor,
                 modifier = Modifier.size(18.dp)
@@ -288,7 +284,7 @@ internal fun ChromeGridTabCard(
                         )
                     } else if (tab.url.isBlank()) {
                         Icon(
-                            imageVector = Icons.Rounded.Search,
+                            imageVector = QuickTabSymbols.Search,
                             contentDescription = null,
                             tint = MaterialTheme.colorScheme.onSurface,
                             modifier = Modifier.size(13.dp)
@@ -326,7 +322,7 @@ internal fun ChromeGridTabCard(
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
-                        imageVector = Icons.Rounded.Close,
+                        imageVector = QuickTabSymbols.Close,
                         contentDescription = "Close tab",
                         tint = headerContentColor.copy(alpha = 0.85f),
                         modifier = Modifier.size(16.dp)
@@ -382,7 +378,7 @@ internal fun TabCardThumbnailContent(
             ) {
                 Box(contentAlignment = Alignment.Center) {
                     Icon(
-                        imageVector = Icons.Rounded.Search,
+                        imageVector = QuickTabSymbols.Search,
                         contentDescription = null,
                         tint = MaterialTheme.colorScheme.onPrimaryContainer,
                         modifier = Modifier.size(22.dp)

@@ -1,5 +1,6 @@
 package com.verve.browser.presentation.browser.components.searchpill.pageactions
 
+import android.content.Intent
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -13,12 +14,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
-import androidx.compose.material.icons.rounded.Check
-import androidx.compose.material.icons.rounded.Close
-import androidx.compose.material.icons.rounded.Link
-import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -27,6 +22,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -42,38 +38,43 @@ internal fun PageActionsTopBar(
     onReloadOrStopClick: () -> Unit,
     onForwardClick: () -> Unit,
     modifier: Modifier = Modifier,
+    shareUrl: String = "",
+    onShareClick: (() -> Unit)? = null,
     isQuicConnection: Boolean = false
 ) {
+    val context = LocalContext.current
+
     Row(
         modifier = modifier
             .fillMaxWidth()
             .height(64.dp),
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
+        // 1. Domain Pill (Copy Link + Domain + Reload/Stop)
         Surface(
             modifier = Modifier
                 .weight(1f)
                 .fillMaxHeight(),
             shape = CircleShape,
-            color = MaterialTheme.colorScheme.surfaceContainerHigh
+            color = MaterialTheme.colorScheme.surfaceContainerHighest
         ) {
             Row(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(horizontal = 8.dp),
+                    .padding(horizontal = 6.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 IconButton(onClick = onCopyUrlClick) {
                     Icon(
-                        imageVector = if (showCopiedFeedback) Icons.Rounded.Check else Icons.Rounded.Link,
+                        imageVector = if (showCopiedFeedback) PageActionsSymbols.Check else PageActionsSymbols.Link,
                         contentDescription = "Copy page link",
                         tint = if (showCopiedFeedback) {
                             MaterialTheme.colorScheme.primary
                         } else {
                             MaterialTheme.colorScheme.onSurface
                         },
-                        modifier = Modifier.size(21.dp)
+                        modifier = Modifier.size(20.dp)
                     )
                 }
 
@@ -87,7 +88,11 @@ internal fun PageActionsTopBar(
                 ) {
                     Text(
                         text = if (showCopiedFeedback) "Link copied" else displayDomain,
-                        color = MaterialTheme.colorScheme.primary,
+                        color = if (showCopiedFeedback) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.onSurface
+                        },
                         style = MaterialTheme.typography.titleMedium.copy(
                             fontSize = 15.sp,
                             fontWeight = FontWeight.SemiBold
@@ -117,38 +122,69 @@ internal fun PageActionsTopBar(
 
                 IconButton(onClick = onReloadOrStopClick) {
                     Icon(
-                        imageVector = if (isPageLoading) Icons.Rounded.Close else Icons.Rounded.Refresh,
+                        imageVector = if (isPageLoading) PageActionsSymbols.Close else PageActionsSymbols.Refresh,
                         contentDescription = if (isPageLoading) "Stop loading" else "Reload page",
                         tint = MaterialTheme.colorScheme.onSurface,
-                        modifier = Modifier.size(21.dp)
+                        modifier = Modifier.size(20.dp)
                     )
                 }
             }
         }
 
+        // 2. Circular Share Action Button
+        Surface(
+            onClick = {
+                if (onShareClick != null) {
+                    onShareClick()
+                } else {
+                    val target = shareUrl.ifBlank { displayDomain }
+                    if (target.isNotBlank()) {
+                        val sendIntent = Intent(Intent.ACTION_SEND).apply {
+                            type = "text/plain"
+                            putExtra(Intent.EXTRA_TEXT, target)
+                        }
+                        context.startActivity(Intent.createChooser(sendIntent, null))
+                    }
+                }
+            },
+            modifier = Modifier.size(64.dp),
+            shape = CircleShape,
+            color = MaterialTheme.colorScheme.surfaceContainerHighest
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Icon(
+                    imageVector = PageActionsSymbols.Share,
+                    contentDescription = "Share page",
+                    tint = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.size(21.dp)
+                )
+            }
+        }
+
+        // 3. Forward Navigation Pill
         Surface(
             onClick = onForwardClick,
             enabled = canGoForward,
             modifier = Modifier
-                .width(56.dp)
+                .width(52.dp)
                 .fillMaxHeight(),
             shape = CircleShape,
             color = if (canGoForward) {
                 MaterialTheme.colorScheme.secondaryContainer
             } else {
-                MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.72f)
+                MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.72f)
             }
         ) {
             Box(contentAlignment = Alignment.Center) {
                 Icon(
-                    imageVector = Icons.AutoMirrored.Rounded.KeyboardArrowRight,
+                    imageVector = PageActionsSymbols.ChevronRight,
                     contentDescription = "Forward",
                     tint = if (canGoForward) {
                         MaterialTheme.colorScheme.onSecondaryContainer
                     } else {
                         MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f)
                     },
-                    modifier = Modifier.size(24.dp)
+                    modifier = Modifier.size(22.dp)
                 )
             }
         }

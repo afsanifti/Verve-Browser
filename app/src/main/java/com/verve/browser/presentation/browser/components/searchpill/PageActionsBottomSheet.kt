@@ -1,11 +1,16 @@
 package com.verve.browser.presentation.browser.components.searchpill
 
 import android.content.ClipData
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
@@ -20,7 +25,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.ClipEntry
 import androidx.compose.ui.platform.LocalClipboard
@@ -31,6 +38,7 @@ import com.verve.browser.presentation.browser.components.searchpill.pageactions.
 import com.verve.browser.presentation.browser.components.searchpill.pageactions.PageActionsTopBar
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlin.time.Duration.Companion.milliseconds
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -93,7 +101,7 @@ fun PageActionsBottomSheet(
 
     LaunchedEffect(showCopiedFeedback) {
         if (showCopiedFeedback) {
-            delay(1500L)
+            delay(1500L.milliseconds)
             showCopiedFeedback = false
         }
     }
@@ -102,8 +110,23 @@ fun PageActionsBottomSheet(
         onDismissRequest = onDismissRequest,
         sheetState = sheetState,
         shape = RoundedCornerShape(topStart = 40.dp, topEnd = 40.dp),
-        containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-        dragHandle = null
+        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        dragHandle = {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 8.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Box(
+                    modifier = Modifier
+                        .width(32.dp)
+                        .height(4.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f))
+                )
+            }
+        }
     ) {
         LaunchedEffect(sheetState) {
             snapshotFlow { sheetState.targetValue }
@@ -121,11 +144,12 @@ fun PageActionsBottomSheet(
                 .fillMaxWidth()
                 .navigationBarsPadding()
                 .padding(horizontal = 16.dp)
-                .padding(top = 18.dp, bottom = 20.dp),
+                .padding(bottom = 20.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             PageActionsTopBar(
                 displayDomain = displayDomain,
+                shareUrl = currentUrl,
                 showCopiedFeedback = showCopiedFeedback,
                 isPageLoading = isPageLoading,
                 canGoForward = canGoForward,

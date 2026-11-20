@@ -1,12 +1,45 @@
-### Significant Changes
+# Verve Browser — Release Notes
 
-- **Find in Page:** Search for text on any webpage right from the bottom bar, complete with a live match counter and quick up/down navigation.
-- **Downloads Manager:** View, open, and share your files in a new Downloads screen, with a live progress banner at the top whenever a download starts.
-- **Faster Browsing with HTTP/3:** Added QUIC / HTTP/3 support for quicker page loads, along with a toggle in Settings.
-- **Simpler App Updates:** Tapping **Update** now takes you straight to **About Verve** and automatically starts downloading and installing the update.
 
-### Improvements & Stability
 
-- **Bottom Bar & Gestures:** Made the bottom bar animations smoother and refined tab-swiping previews, text zoom controls, and desktop site mode.
-- **Cleaner Icons & Menus:** Updated the site controls icon and polished the page actions menu.
-- **Bug Fixes & Reliability:** Fixed an issue where downloaded APKs would re-download instead of installing, improved back-button navigation, and added automatic cleanup for old update files.
+## ✨ What's New
+
+
+
+### 🌐 Default Browser Support
+
+* **Set Verve as Default:** You can now set Verve Browser as your device's default browser directly from **Settings → Default Browser**, with live status updates whenever your default browser changes.
+
+* **Seamless Link Opening:** Tapping `http` or `https` links in other apps now opens them smoothly inside Verve—reusing an empty tab if one is open, or launching a fresh tab automatically.
+
+
+
+### 🌙 Automatic Dark Mode for Websites
+
+* **Synced Web Themes:** When Verve is set to **Dark** mode (or follows your system's dark theme), websites that support dark mode now automatically switch to their dark appearance to match the browser.
+
+* **Consistent Dark UI:** Error pages and Verve Shield blocked-page screens also adapt seamlessly between light and dark themes.
+
+
+
+---
+
+
+
+## 🎨 UI & Visual Improvements
+
+* **Page Actions Contrast Polish:** Updated the cards, buttons, segmented list items, and quick toggles inside the Page Actions bottom sheet to use elevated surface tones so every control stands out clearly against the sheet background.
+
+* **Quick Site Controls:** Connected the **Site Controls** shortcut directly on the floating bottom toolbar for faster access to site permissions and connection details.
+
+* **Modernized Iconography:** Migrated icons across Settings, Downloads, and About Verve to Material Symbols for a cleaner, unified look.
+
+
+
+---
+
+
+
+## 🔒 Security & Stability
+
+* **Safer External App Links:** Hardened `intent://` link handling to block unauthorized internal component targeting, validate `http`/`https` fallback URLs, and fall back to the Google Play Store when a target app isn't installed.

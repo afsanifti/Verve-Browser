@@ -29,8 +29,8 @@ import androidx.compose.ui.unit.dp
 import com.verve.browser.presentation.browser.BrowserUiState
 import com.verve.browser.presentation.browser.BrowserViewModel
 import com.verve.browser.presentation.browser.components.searchpill.ExpressiveBottomToolbar
-import com.verve.browser.presentation.browser.components.searchpill.PageZoomBottomBar
 import com.verve.browser.presentation.browser.components.searchpill.SearchSuggestionsList
+import com.verve.browser.presentation.browser.components.searchpill.pageactions.PageZoomBottomBar
 import com.verve.browser.presentation.browser.util.TabThumbnailCache
 
 @Composable
@@ -45,7 +45,8 @@ internal fun BoxScope.BrowserBottomOverlayDock(
     onSwipeStarted: () -> Unit,
     onSwipeFractionChanged: (Float) -> Unit,
     onSwipeCommitted: (targetTabId: String, direction: Int, currentFraction: Float) -> Unit,
-    onSwipeCancelled: () -> Unit
+    onSwipeCancelled: () -> Unit,
+    onSiteControlsClick: () -> Unit = {}
 ) {
     val focusManager = LocalFocusManager.current
 
@@ -190,6 +191,11 @@ internal fun BoxScope.BrowserBottomOverlayDock(
                 onLeftActionClick = {
                     focusManager.clearFocus()
                     overlayState.isPageActionsSheetOpen = true
+                },
+                onSiteSettingsClick = {
+                    focusManager.clearFocus()
+                    overlayState.isSiteControlsSheetOpen = true
+                    onSiteControlsClick()
                 },
                 onRefreshClick = {
                     webViewRef?.reload()

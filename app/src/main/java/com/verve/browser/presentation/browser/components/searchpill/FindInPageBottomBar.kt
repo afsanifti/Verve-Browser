@@ -16,10 +16,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Close
-import androidx.compose.material.icons.rounded.KeyboardArrowDown
-import androidx.compose.material.icons.rounded.KeyboardArrowUp
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -145,7 +141,7 @@ internal fun FindInPagePillContent(
             horizontalArrangement = Arrangement.spacedBy(2.dp)
         ) {
             FindPillActionButton(
-                icon = Icons.Rounded.KeyboardArrowUp,
+                icon = SearchPillSymbols.KeyboardArrowUp,
                 contentDescription = "Previous match",
                 enabled = hasMatches,
                 tint = contentColor,
@@ -153,7 +149,7 @@ internal fun FindInPagePillContent(
             )
 
             FindPillActionButton(
-                icon = Icons.Rounded.KeyboardArrowDown,
+                icon = SearchPillSymbols.KeyboardArrowDown,
                 contentDescription = "Next match",
                 enabled = hasMatches,
                 tint = contentColor,
@@ -161,7 +157,7 @@ internal fun FindInPagePillContent(
             )
 
             FindPillActionButton(
-                icon = Icons.Rounded.Close,
+                icon = SearchPillSymbols.Close,
                 contentDescription = "Close find in page",
                 enabled = true,
                 tint = contentColor,

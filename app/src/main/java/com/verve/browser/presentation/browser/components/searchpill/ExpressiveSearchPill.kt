@@ -1,6 +1,9 @@
 package com.verve.browser.presentation.browser.components.searchpill
 
 import android.annotation.SuppressLint
+import android.content.ClipData
+import android.os.Build
+import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -13,6 +16,7 @@ import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
@@ -25,9 +29,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Close
-import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -37,6 +38,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -49,6 +51,9 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.ClipEntry
+import androidx.compose.ui.platform.LocalClipboard
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -62,13 +67,14 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.lerp
 import androidx.compose.ui.unit.sp
+import androidx.core.net.toUri
 import com.verve.browser.R
 import com.verve.browser.presentation.browser.components.pillTertiaryLoadingGradient
 import com.verve.browser.presentation.browser.util.DropShadow
 import kotlin.math.sin
-import kotlinx.coroutines.delay
-import androidx.core.net.toUri
 import kotlin.time.Duration.Companion.milliseconds
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 @Composable
 fun ExpressiveSearchPill(
@@ -95,11 +101,15 @@ fun ExpressiveSearchPill(
     onRefreshClick: () -> Unit = {},
     onStopLoadingClick: () -> Unit = {},
     onToggleIncognito: () -> Unit = {},
+    onCopyUrl: (String) -> Unit = {},
     onFindQueryChange: (String) -> Unit = {},
     onFindPrevious: () -> Unit = {},
     onFindNext: () -> Unit = {},
     onCloseFindInPage: () -> Unit = {}
 ) {
+    val context = LocalContext.current
+    val clipboard = LocalClipboard.current
+    val coroutineScope = rememberCoroutineScope()
     val focusManager = LocalFocusManager.current
     val focusRequester = remember { FocusRequester() }
     val density = LocalDensity.current
@@ -240,45 +250,47 @@ fun ExpressiveSearchPill(
                             translationX = swipeContentShiftPx
                         }
                 ) {
-                    IconButton(
-                        onClick = onSiteSettingsClick,
-                        enabled = iconProgress > 0.65f,
-                        modifier = Modifier
-                            .align(Alignment.CenterStart)
-                            .padding(start = 8.dp)
-                            .graphicsLayer {
-                                alpha = iconProgress
-                                scaleX = iconScale
-                                scaleY = iconScale
-                                translationX = -iconSlidePx * (1f - iconProgress)
-                            }
-                    ) {
-                        Icon(
-                            painter = painterResource(id = R.drawable.ic_siteinfo),
-                            contentDescription = "Site Settings",
-                            tint = contentColor,
-                            modifier = Modifier.size(18.dp)
-                        )
-                    }
-
+                    // Placed behind the side IconButtons so their click targets aren't occluded
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
-                            .clickable(
+                            .combinedClickable(
                                 interactionSource = remember { MutableInteractionSource() },
-                                indication = null
-                            ) {
-                                if (clampedExpand < 0.5f) {
-                                    onExpandClick()
+                                indication = null,
+                                onLongClickLabel = "Copy link",
+                                onLongClick = if (currentUrl.isNotBlank()) {
+                                    {
+                                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                        coroutineScope.launch {
+                                            clipboard.setClipEntry(
+                                                ClipEntry(ClipData.newPlainText("url", currentUrl))
+                                            )
+                                        }
+                                        if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.S_V2) {
+                                            Toast.makeText(
+                                                context,
+                                                "Link copied",
+                                                Toast.LENGTH_SHORT
+                                            ).show()
+                                        }
+                                        onCopyUrl(currentUrl)
+                                    }
                                 } else {
-                                    textFieldValue = TextFieldValue(
-                                        text = currentUrl,
-                                        selection = TextRange(0, currentUrl.length)
-                                    )
-                                    onInputTextChange(currentUrl)
-                                    isEditingUrl = true
+                                    null
+                                },
+                                onClick = {
+                                    if (clampedExpand < 0.5f) {
+                                        onExpandClick()
+                                    } else {
+                                        textFieldValue = TextFieldValue(
+                                            text = currentUrl,
+                                            selection = TextRange(0, currentUrl.length)
+                                        )
+                                        onInputTextChange(currentUrl)
+                                        isEditingUrl = true
+                                    }
                                 }
-                            }
+                            )
                             .padding(horizontal = domainHorizontalPadding),
                         contentAlignment = Alignment.Center
                     ) {
@@ -296,6 +308,27 @@ fun ExpressiveSearchPill(
                     }
 
                     IconButton(
+                        onClick = onSiteSettingsClick,
+                        enabled = iconProgress > 0.65f,
+                        modifier = Modifier
+                            .align(Alignment.CenterStart)
+                            .padding(start = 8.dp)
+                            .graphicsLayer {
+                                alpha = iconProgress
+                                scaleX = iconScale
+                                scaleY = iconScale
+                                translationX = -iconSlidePx * (1f - iconProgress)
+                            }
+                    ) {
+                        Icon(
+                            painter = painterResource(id = R.drawable.ic_siteinfo),
+                            contentDescription = "Site Settings",
+                            tint = contentColor,
+                            modifier = Modifier.size(22.dp)
+                        )
+                    }
+
+                    IconButton(
                         onClick = if (isPageLoading) onStopLoadingClick else onRefreshClick,
                         enabled = iconProgress > 0.65f,
                         modifier = Modifier
@@ -309,7 +342,7 @@ fun ExpressiveSearchPill(
                             }
                     ) {
                         Icon(
-                            imageVector = if (isPageLoading) Icons.Rounded.Close else Icons.Rounded.Refresh,
+                            imageVector = if (isPageLoading) SearchPillSymbols.Close else SearchPillSymbols.Refresh,
                             contentDescription = if (isPageLoading) "Stop Loading" else "Reload Page",
                             tint = contentColor,
                             modifier = Modifier.size(22.dp)
@@ -327,7 +360,7 @@ fun ExpressiveSearchPill(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Icon(
-                        painter = painterResource(id = R.drawable.ic_search),
+                        imageVector = SearchPillSymbols.Search,
                         contentDescription = "Search",
                         tint = contentColor,
                         modifier = Modifier.size(18.dp)
@@ -465,14 +498,12 @@ private fun IncognitoEyesAnimatedIcon(
     tint: Color,
     modifier: Modifier = Modifier
 ) {
-    // 0f = eyes fully open, 1f = eyelids fully lowered
     val eyelidProgress by animateFloatAsState(
         targetValue = if (isClosed) 1f else 0f,
         animationSpec = tween(durationMillis = 250, easing = FastOutSlowInEasing),
         label = "eyelidClosingProgress"
     )
 
-    // Mid-blink vertical squash when the eyelids meet around 0.5f, rebounding smoothly at 0f and 1f
     val blinkSquash = 1f - 0.22f * sin(eyelidProgress * Math.PI).toFloat()
 
     Box(
@@ -485,7 +516,6 @@ private fun IncognitoEyesAnimatedIcon(
                 translationY = eyelidProgress * 1.2.dp.toPx()
             }
     ) {
-        // Open eyes: clipped away from the top downward as the upper eyelid lowers
         if (eyelidProgress < 1f) {
             Icon(
                 painter = painterResource(id = R.drawable.ic_eyes),
@@ -507,7 +537,6 @@ private fun IncognitoEyesAnimatedIcon(
             )
         }
 
-        // Closed eyes: revealed from the top downward in lockstep with the lowering eyelid
         if (eyelidProgress > 0f) {
             Icon(
                 painter = painterResource(id = R.drawable.ic_eyes_closed),

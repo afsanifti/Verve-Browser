@@ -1,31 +1,33 @@
 package com.verve.browser.presentation.browser.components.searchpill.pageactions
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Download
-import androidx.compose.material.icons.rounded.FindInPage
-import androidx.compose.material.icons.rounded.Settings
-import androidx.compose.material.icons.rounded.ZoomIn
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItemColors
 import androidx.compose.material3.ListItemDefaults
+import androidx.compose.material3.LocalMinimumInteractiveComponentSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SegmentedListItem
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.painter.Painter
@@ -48,86 +50,150 @@ internal fun PageActionsMiddleSections(
     onFindOnPageClick: () -> Unit,
     onDownloadsClick: () -> Unit,
     onZoomClick: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    sourceLanguage: String = "English"
 ) {
     val segmentedItemColors = ListItemDefaults.segmentedColors(
-        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+        containerColor = MaterialTheme.colorScheme.surfaceContainerHighest
     )
+
+    val resolvedTargetLanguage = if (translateLanguage.equals(sourceLanguage, ignoreCase = true)) {
+        "Bengali"
+    } else {
+        translateLanguage
+    }
 
     val actionItems = listOf(
         Triple(painterResource(id = R.drawable.ic_siteinfo), "Site controls", onSiteControlsClick),
-        Triple(rememberVectorPainter(Icons.Rounded.FindInPage), "Find on page", onFindOnPageClick),
-        Triple(rememberVectorPainter(Icons.Rounded.Download), "Downloads", onDownloadsClick),
-        Triple(rememberVectorPainter(Icons.Rounded.ZoomIn), "Zoom", onZoomClick)
+        Triple(rememberVectorPainter(PageActionsSymbols.FindInPage), "Find on page", onFindOnPageClick),
+        Triple(rememberVectorPainter(PageActionsSymbols.Download), "Downloads", onDownloadsClick),
+        Triple(rememberVectorPainter(PageActionsSymbols.ZoomIn), "Zoom", onZoomClick)
     )
 
     Column(
         modifier = modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        // Translate Card
-        Surface(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(20.dp),
-            color = MaterialTheme.colorScheme.surfaceContainerHigh
+        // Split Translate Row: Main Toggle Card + Standalone Gear Tile
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(IntrinsicSize.Min),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Row(
+            Surface(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(start = 18.dp, end = 14.dp, top = 12.dp, bottom = 12.dp),
-                verticalAlignment = Alignment.CenterVertically
+                    .weight(1f)
+                    .fillMaxHeight(),
+                shape = RoundedCornerShape(22.dp),
+                color = MaterialTheme.colorScheme.surfaceContainerHighest
             ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = "Translate",
-                        color = MaterialTheme.colorScheme.onSurface,
-                        style = MaterialTheme.typography.titleMedium.copy(
-                            fontSize = 16.sp,
-                            fontWeight = FontWeight.Medium
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(start = 18.dp, end = 16.dp, top = 12.dp, bottom = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clickable(onClick = onTranslateSettingsClick)
+                    ) {
+                        Text(
+                            text = "Translate",
+                            color = MaterialTheme.colorScheme.onSurface,
+                            style = MaterialTheme.typography.titleMedium.copy(
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Medium
+                            )
                         )
+                        Spacer(modifier = Modifier.height(3.dp))
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Text(
+                                text = sourceLanguage,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                style = MaterialTheme.typography.bodySmall.copy(
+                                    fontSize = 13.sp
+                                ),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Icon(
+                                imageVector = PageActionsSymbols.SwapHoriz,
+                                contentDescription = "Swap translation direction",
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Text(
+                                text = resolvedTargetLanguage,
+                                color = MaterialTheme.colorScheme.primary,
+                                style = MaterialTheme.typography.bodySmall.copy(
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Medium
+                                ),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.width(12.dp))
+
+                    Box(
+                        modifier = Modifier
+                            .width(1.dp)
+                            .height(32.dp)
+                            .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f))
                     )
-                    Spacer(modifier = Modifier.height(2.dp))
-                    Text(
-                        text = translateLanguage,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        style = MaterialTheme.typography.bodySmall.copy(
-                            fontSize = 13.sp
-                        )
+
+                    Spacer(modifier = Modifier.width(14.dp))
+
+                    Switch(
+                        checked = isTranslated,
+                        onCheckedChange = onTranslateToggle
                     )
                 }
+            }
 
-                IconButton(onClick = onTranslateSettingsClick) {
+            Surface(
+                onClick = onTranslateSettingsClick,
+                modifier = Modifier
+                    .width(56.dp)
+                    .fillMaxHeight(),
+                shape = RoundedCornerShape(22.dp),
+                color = MaterialTheme.colorScheme.surfaceContainerHighest
+            ) {
+                Box(contentAlignment = Alignment.Center) {
                     Icon(
-                        imageVector = Icons.Rounded.Settings,
+                        imageVector = PageActionsSymbols.Settings,
                         contentDescription = "Translation settings",
                         tint = MaterialTheme.colorScheme.onSurface,
-                        modifier = Modifier.size(21.dp)
+                        modifier = Modifier.size(22.dp)
                     )
                 }
-
-                Spacer(modifier = Modifier.width(4.dp))
-
-                Switch(
-                    checked = isTranslated,
-                    onCheckedChange = onTranslateToggle
-                )
             }
         }
 
-        // Material 3 Expressive Segmented List
-        Column(
-            modifier = Modifier.fillMaxWidth(),
-            verticalArrangement = Arrangement.spacedBy(ListItemDefaults.SegmentedGap)
-        ) {
-            actionItems.forEachIndexed { index, (painter, label, onClick) ->
-                SegmentedSheetActionItem(
-                    index = index,
-                    count = actionItems.size,
-                    painter = painter,
-                    label = label,
-                    colors = segmentedItemColors,
-                    onClick = onClick
-                )
+        // Compact Material 3 Expressive Segmented List
+        CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides 46.dp) {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(ListItemDefaults.SegmentedGap)
+            ) {
+                actionItems.forEachIndexed { index, (painter, label, onClick) ->
+                    SegmentedSheetActionItem(
+                        index = index,
+                        count = actionItems.size,
+                        painter = painter,
+                        label = label,
+                        colors = segmentedItemColors,
+                        onClick = onClick
+                    )
+                }
             }
         }
     }
@@ -148,13 +214,16 @@ private fun SegmentedSheetActionItem(
         onClick = onClick,
         shapes = ListItemDefaults.segmentedShapes(index = index, count = count),
         colors = colors,
-        modifier = modifier.fillMaxWidth(),
+        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp),
+        modifier = modifier
+            .fillMaxWidth()
+            .height(46.dp),
         leadingContent = {
             Icon(
                 painter = painter,
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(20.dp)
+                modifier = Modifier.size(19.dp)
             )
         },
         content = {

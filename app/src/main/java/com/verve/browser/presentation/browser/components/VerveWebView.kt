@@ -4,6 +4,7 @@ import android.annotation.SuppressLint
 import android.view.ViewGroup
 import android.webkit.WebView
 import android.widget.FrameLayout
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -18,7 +19,9 @@ import com.verve.browser.presentation.browser.BrowserViewModel
 import com.verve.browser.presentation.browser.components.webview.createTabWebView
 import com.verve.browser.presentation.browser.util.TabThumbnailCache
 import com.verve.browser.presentation.browser.util.TabWebViewPool
+import com.verve.browser.presentation.browser.util.WebViewThemeSync
 import com.verve.browser.presentation.downloads.DownloadItem
+import com.verve.browser.presentation.theme.rememberThemeConfig
 
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
@@ -34,6 +37,10 @@ fun VerveWebView(
 ) {
     var attachedTabId by remember { mutableStateOf("") }
     val latestOnDownloadStarted by rememberUpdatedState(onDownloadStarted)
+
+    val themeConfig = rememberThemeConfig()
+    val isSystemDark = isSystemInDarkTheme()
+    val isDarkTheme = WebViewThemeSync.resolveIsDarkTheme(themeConfig.darkMode, isSystemDark)
 
     AndroidView(
         modifier = modifier,
@@ -65,6 +72,8 @@ fun VerveWebView(
                     )
                 }
             }
+
+            WebViewThemeSync.applyToWebView(targetWebView, isDarkTheme)
 
             if (attachedTabId != tabId || targetWebView.parent !== hostContainer) {
                 if (attachedTabId.isNotEmpty() && attachedTabId != tabId) {

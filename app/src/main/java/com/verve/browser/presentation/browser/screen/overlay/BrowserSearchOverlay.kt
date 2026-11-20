@@ -56,7 +56,8 @@ internal fun BrowserSearchOverlay(
             onSwipeStarted = onSwipeStarted,
             onSwipeFractionChanged = onSwipeFractionChanged,
             onSwipeCommitted = onSwipeCommitted,
-            onSwipeCancelled = onSwipeCancelled
+            onSwipeCancelled = onSwipeCancelled,
+            onSiteControlsClick = onSiteControlsClick
         )
 
         TopDownloadSnackbar(

@@ -9,8 +9,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.KeyboardArrowUp
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -57,7 +55,7 @@ fun ExpressiveLeftActionButton(
             modifier = Modifier.fillMaxSize()
         ) {
             Icon(
-                imageVector = Icons.Rounded.KeyboardArrowUp,
+                imageVector = SearchPillSymbols.KeyboardArrowUp,
                 contentDescription = "Page Menu",
                 tint = contentColor,
                 modifier = Modifier.size(28.dp)

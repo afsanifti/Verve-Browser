@@ -1,5 +1,7 @@
 package com.verve.browser.presentation.settings
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -11,11 +13,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.ArrowBack
-import androidx.compose.material.icons.rounded.AccountCircle
 import androidx.compose.material3.Badge
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -25,19 +23,26 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.verve.browser.data.network.QuicNetworkManager
+import com.verve.browser.presentation.browser.util.DefaultBrowserHelper
 import com.verve.browser.presentation.theme.rememberThemeConfig
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
     hasUpdateAvailable: Boolean,
@@ -48,8 +53,31 @@ fun SettingsScreen(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
     val themeConfig = rememberThemeConfig()
     val isQuicEnabled by QuicNetworkManager.isQuicEnabled.collectAsState()
+
+    var isDefaultBrowser by remember {
+        mutableStateOf(DefaultBrowserHelper.isDefaultBrowser(context))
+    }
+
+    val defaultBrowserLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) {
+        isDefaultBrowser = DefaultBrowserHelper.isDefaultBrowser(context)
+    }
+
+    DisposableEffect(lifecycleOwner, context) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                isDefaultBrowser = DefaultBrowserHelper.isDefaultBrowser(context)
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
 
     LaunchedEffect(Unit) {
         QuicNetworkManager.initialize(context)
@@ -70,7 +98,7 @@ fun SettingsScreen(
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
                         Icon(
-                            imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
+                            imageVector = SettingsSymbols.ArrowBack,
                             contentDescription = "Back"
                         )
                     }
@@ -104,7 +132,7 @@ fun SettingsScreen(
                                     .background(MaterialTheme.colorScheme.surfaceContainerHighest)
                             ) {
                                 Icon(
-                                    imageVector = Icons.Rounded.AccountCircle,
+                                    imageVector = SettingsSymbols.AccountCircle,
                                     contentDescription = null,
                                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                     modifier = Modifier.size(26.dp)
@@ -126,7 +154,17 @@ fun SettingsScreen(
                         subtitle = "Google"
                     ),
                     ExpressiveMenuItem(
-                        title = "Default Browser"
+                        title = "Default Browser",
+                        subtitle = if (isDefaultBrowser) {
+                            "Verve is your default browser"
+                        } else {
+                            "Set Verve as your default browser"
+                        },
+                        onClick = {
+                            defaultBrowserLauncher.launch(
+                                DefaultBrowserHelper.createRequestDefaultBrowserIntent(context)
+                            )
+                        }
                     ),
                     ExpressiveMenuItem(
                         title = "QUIC / HTTP/3",

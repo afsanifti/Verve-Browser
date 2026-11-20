@@ -17,13 +17,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.Article
-import androidx.compose.material.icons.rounded.Add
-import androidx.compose.material.icons.rounded.Bookmark
-import androidx.compose.material.icons.rounded.BookmarkBorder
-import androidx.compose.material.icons.rounded.DesktopWindows
-import androidx.compose.material.icons.rounded.Shield
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -76,7 +69,7 @@ internal fun PageActionsBottomControls(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Icon(
-                    imageVector = Icons.Rounded.Add,
+                    imageVector = PageActionsSymbols.Add,
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.onPrimary,
                     modifier = Modifier.size(22.dp)
@@ -100,7 +93,7 @@ internal fun PageActionsBottomControls(
             verticalAlignment = Alignment.CenterVertically
         ) {
             ExpressiveQuickToggleTile(
-                icon = Icons.Rounded.Shield,
+                icon = if (isShieldEnabled) PageActionsSymbols.ShieldFilled else PageActionsSymbols.Shield,
                 contentDescription = "Ad and tracker shield",
                 isActive = isShieldEnabled,
                 onClick = onShieldToggle,
@@ -108,7 +101,7 @@ internal fun PageActionsBottomControls(
             )
 
             ExpressiveQuickToggleTile(
-                icon = if (isBookmarked) Icons.Rounded.Bookmark else Icons.Rounded.BookmarkBorder,
+                icon = if (isBookmarked) PageActionsSymbols.BookmarkFilled else PageActionsSymbols.Bookmark,
                 contentDescription = "Bookmark page",
                 isActive = isBookmarked,
                 onClick = onBookmarkToggle,
@@ -116,7 +109,7 @@ internal fun PageActionsBottomControls(
             )
 
             ExpressiveQuickToggleTile(
-                icon = Icons.Rounded.DesktopWindows,
+                icon = if (isDesktopSite) PageActionsSymbols.DesktopWindowsFilled else PageActionsSymbols.DesktopWindows,
                 contentDescription = "Desktop site",
                 isActive = isDesktopSite,
                 onClick = onDesktopSiteToggle,
@@ -124,7 +117,7 @@ internal fun PageActionsBottomControls(
             )
 
             ExpressiveQuickToggleTile(
-                icon = Icons.AutoMirrored.Rounded.Article,
+                icon = if (isReaderMode) PageActionsSymbols.ArticleFilled else PageActionsSymbols.Article,
                 contentDescription = "Reader mode",
                 isActive = isReaderMode,
                 onClick = onReaderModeToggle,
@@ -146,7 +139,7 @@ private fun ExpressiveQuickToggleTile(
         targetValue = if (isActive) {
             MaterialTheme.colorScheme.primary
         } else {
-            MaterialTheme.colorScheme.surfaceContainerHigh
+            MaterialTheme.colorScheme.surfaceContainerHighest
         },
         label = "quickToggleContainerColor"
     )

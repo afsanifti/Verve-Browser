@@ -163,6 +163,14 @@ class TabWebViewPool(private val maxLiveWebViews: Int = 6) {
     private val loadedUrls = HashMap<String, String>()
     private val crashHaltedTabs = HashSet<String>()
     private val poolRevisions = mutableStateMapOf<String, Int>()
+    private var isDarkTheme: Boolean = false
+
+    fun updateDarkTheme(darkTheme: Boolean) {
+        isDarkTheme = darkTheme
+        liveWebViews.values.forEach { webView ->
+            WebViewThemeSync.applyToWebView(webView, darkTheme)
+        }
+    }
 
     fun peekWebView(tabId: String): WebView? {
         poolRevisions[tabId]
@@ -183,12 +191,14 @@ class TabWebViewPool(private val maxLiveWebViews: Int = 6) {
     ): WebView {
         poolRevisions[tabId]
         liveWebViews[tabId]?.let { existing ->
+            WebViewThemeSync.applyToWebView(existing, isDarkTheme)
             return existing
         }
 
         evictOldestIfNeeded(excludeTabId = tabId)
 
         val created = factory(context)
+        WebViewThemeSync.applyToWebView(created, isDarkTheme)
         val restored = savedStates.remove(tabId)?.let { bundle ->
             runCatching { created.restoreState(bundle) != null }.getOrDefault(false)
         } ?: false

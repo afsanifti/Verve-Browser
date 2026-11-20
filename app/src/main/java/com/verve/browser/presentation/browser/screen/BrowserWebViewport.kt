@@ -1,9 +1,9 @@
 package com.verve.browser.presentation.browser.screen
 
-import android.net.Uri
 import android.webkit.WebView
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -19,6 +19,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -37,7 +38,10 @@ import com.verve.browser.presentation.browser.BrowserViewModel
 import com.verve.browser.presentation.browser.components.VerveWebView
 import com.verve.browser.presentation.browser.util.TabThumbnailCache
 import com.verve.browser.presentation.browser.util.TabWebViewPool
+import com.verve.browser.presentation.browser.util.WebViewThemeSync
+import com.verve.browser.presentation.theme.rememberThemeConfig
 import kotlin.math.abs
+import androidx.core.net.toUri
 
 private val TabCarouselGutterDp = 12.dp
 private val TabCarouselCardShape = RoundedCornerShape(16.dp)
@@ -58,6 +62,14 @@ internal fun BrowserWebViewport(
 ) {
     val density = LocalDensity.current
     val isCarouselActive = abs(carouselOffsetFraction) > 0.001f
+
+    val themeConfig = rememberThemeConfig()
+    val isSystemDark = isSystemInDarkTheme()
+    val isDarkTheme = WebViewThemeSync.resolveIsDarkTheme(themeConfig.darkMode, isSystemDark)
+
+    LaunchedEffect(tabWebViewPool, isDarkTheme) {
+        tabWebViewPool.updateDarkTheme(isDarkTheme)
+    }
 
     val activeTabIndex = remember(uiState.tabs, uiState.activeTabId) {
         uiState.tabs.indexOfFirst { it.id == uiState.activeTabId }
@@ -92,7 +104,10 @@ internal fun BrowserWebViewport(
                 viewModel = viewModel,
                 tabWebViewPool = tabWebViewPool,
                 thumbnailCache = thumbnailCache,
-                onWebViewCreated = onWebViewCreated,
+                onWebViewCreated = { createdWebView ->
+                    WebViewThemeSync.applyToWebView(createdWebView, isDarkTheme)
+                    onWebViewCreated(createdWebView)
+                },
                 modifier = Modifier
                     .fillMaxSize()
                     .graphicsLayer {
@@ -205,7 +220,7 @@ private fun TabCarouselPageCard(
                     if (isIncognito) "Private Tab" else "New Tab"
                 } else {
                     tabTitle.ifBlank {
-                        runCatching { Uri.parse(tabUrl).host?.removePrefix("www.") }
+                        runCatching { tabUrl.toUri().host?.removePrefix("www.") }
                             .getOrNull()
                             .orEmpty()
                             .ifBlank { tabUrl }
