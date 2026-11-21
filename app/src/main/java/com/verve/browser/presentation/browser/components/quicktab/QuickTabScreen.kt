@@ -24,12 +24,12 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -62,12 +62,13 @@ fun QuickTabsScreen(
     onLayoutToggleClick: () -> Unit = {},
     onSettingsClick: () -> Unit = {}
 ) {
+    val context = LocalContext.current
     val haptic = LocalHapticFeedback.current
 
     // Always use the system wallpaper/theme engine rather than the active webpage's seed color
     VerveBrowserTheme(siteSeedColor = null) {
         var isStackSheetOpen by remember { mutableStateOf(false) }
-        var isGridView by rememberSaveable { mutableStateOf(false) }
+        var isGridView by remember { mutableStateOf(QuickTabPreferences.isGridView(context)) }
         var focusedTabId by remember { mutableStateOf(activeTabId) }
 
         // Place newest tabs at index 0 (far right / top of the stack) and older tabs to the left
@@ -126,7 +127,9 @@ fun QuickTabsScreen(
                     onHistoryClick = onHistoryClick,
                     onLayoutToggleClick = {
                         haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                        isGridView = !isGridView
+                        val nextMode = !isGridView
+                        isGridView = nextMode
+                        QuickTabPreferences.setGridView(context, nextMode)
                         onLayoutToggleClick()
                     }
                 )

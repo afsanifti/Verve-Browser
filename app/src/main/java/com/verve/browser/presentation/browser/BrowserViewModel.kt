@@ -68,15 +68,23 @@ class BrowserViewModel(
             _uiState
                 .map { state ->
                     PersistedSessionSnapshot(
-                        tabs = state.tabs.filter { !it.isIncognito }.map { tab ->
-                            tab.copy(
-                                isMainFrameLoading = false,
-                                isLoading = false,
-                                loadingProgress = 0,
-                                activePdfUriString = null,
-                                activePdfTitle = null
-                            )
-                        },
+                        tabs = state.tabs
+                            .filter { !it.isIncognito }
+                            .filterNot { tab ->
+                                tab.url.startsWith("file://", ignoreCase = true) ||
+                                        (tab.activePdfUriString != null &&
+                                                !tab.url.startsWith("http://", ignoreCase = true) &&
+                                                !tab.url.startsWith("https://", ignoreCase = true))
+                            }
+                            .map { tab ->
+                                tab.copy(
+                                    isMainFrameLoading = false,
+                                    isLoading = false,
+                                    loadingProgress = 0,
+                                    activePdfUriString = null,
+                                    activePdfTitle = null
+                                )
+                            },
                         tabStacks = state.tabStacks,
                         activeTabId = state.activeTabId
                     )
@@ -269,14 +277,51 @@ class BrowserViewModel(
     fun updateBottomRegionColor(tabId: String, color: Color?) =
         pageAppearanceController.updateBottomRegionColor(tabId = tabId, color = color)
 
-    fun openInlinePdf(tabId: String, uri: Uri, title: String) {
+    fun openInlinePdf(
+        tabId: String,
+        uri: Uri,
+        title: String,
+        sourceUrl: String? = null,
+        openInNewTab: Boolean = true
+    ) {
         dismissQuickClosePrompt()
         searchSuggestionsController.cancelPendingSuggestions()
+
+        val cleanTitle = title.ifBlank { "document.pdf" }
+        val resolvedTabUrl = sourceUrl
+            ?.takeIf { it.startsWith("http://", ignoreCase = true) || it.startsWith("https://", ignoreCase = true) }
+            ?: uri.toString()
+
+        if (!openInNewTab) {
+            tabSessionController.openInlinePdf(
+                tabId = tabId,
+                pdfUriString = uri.toString(),
+                pdfTitle = cleanTitle
+            )
+            pageAppearanceController.onPageTitleUpdated(tabId = tabId, title = cleanTitle)
+            return
+        }
+
+        val openerTab = _uiState.value.tabs.firstOrNull {
+            it.id == tabId.ifBlank { _uiState.value.activeTabId }
+        }
+        val targetTabId = if (openerTab != null && openerTab.url.isEmpty() && openerTab.activePdfUriString == null) {
+            pageAppearanceController.onPageUrlUpdated(tabId = openerTab.id, url = resolvedTabUrl)
+            openerTab.id
+        } else {
+            createNewTab(
+                initialUrl = resolvedTabUrl,
+                isIncognito = openerTab?.isIncognito ?: false,
+                stackId = openerTab?.stackId
+            )
+        }
+
         tabSessionController.openInlinePdf(
-            tabId = tabId,
+            tabId = targetTabId,
             pdfUriString = uri.toString(),
-            pdfTitle = title
+            pdfTitle = cleanTitle
         )
+        pageAppearanceController.onPageTitleUpdated(tabId = targetTabId, title = cleanTitle)
     }
 
     fun closeInlinePdf(tabId: String = _uiState.value.activeTabId) {
@@ -292,6 +337,9 @@ class BrowserViewModel(
     fun onUrlSubmitted(rawInput: String) {
         if (rawInput.trim().isEmpty()) return
         searchSuggestionsController.cancelPendingSuggestions()
+        if (_uiState.value.activeTab?.activePdfUriString != null) {
+            tabSessionController.closeInlinePdf(_uiState.value.activeTabId)
+        }
         tabSessionController.onUrlSubmitted(rawInput)
     }
 

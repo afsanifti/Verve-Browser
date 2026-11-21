@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -62,6 +63,10 @@ internal fun InlinePdfViewerOverlay(
     var isMenuExpanded by remember(pdfUriString) { mutableStateOf(false) }
     var pdfFragment by remember(pdfUriString) { mutableStateOf<PdfViewerFragment?>(null) }
 
+    BackHandler(enabled = true) {
+        onClose()
+    }
+
     Box(
         modifier = modifier
             .fillMaxSize()
@@ -101,7 +106,7 @@ internal fun InlinePdfViewerOverlay(
                 IconButton(onClick = onClose) {
                     Icon(
                         imageVector = PdfViewerIcons.ArrowBack,
-                        contentDescription = "Back to page",
+                        contentDescription = "Close PDF tab",
                         tint = MaterialTheme.colorScheme.onSurface
                     )
                 }

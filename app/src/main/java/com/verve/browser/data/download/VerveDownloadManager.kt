@@ -27,7 +27,7 @@ object VerveDownloadManager {
     private val _downloadStartedEvents = MutableSharedFlow<DownloadItem>(extraBufferCapacity = 8)
     val downloadStartedEvents: SharedFlow<DownloadItem> = _downloadStartedEvents.asSharedFlow()
 
-    private val inlinePdfHandlers = WeakHashMap<WebView, (Uri, String) -> Unit>()
+    private val inlinePdfHandlers = WeakHashMap<WebView, (Uri, String, String) -> Unit>()
 
     private val networkExecutor = DownloadNetworkExecutor(
         onUpdateItem = ::updateItem,
@@ -42,6 +42,15 @@ object VerveDownloadManager {
         webView: WebView,
         onInlinePdfReady: (Uri, String) -> Unit
     ) {
+        inlinePdfHandlers[webView] = { uri, title, _ ->
+            onInlinePdfReady(uri, title)
+        }
+    }
+
+    fun registerInlinePdfWithSourceHandler(
+        webView: WebView,
+        onInlinePdfReady: (pdfUri: Uri, title: String, sourceUrl: String) -> Unit
+    ) {
         inlinePdfHandlers[webView] = onInlinePdfReady
     }
 
@@ -53,7 +62,7 @@ object VerveDownloadManager {
     ) {
         val appContext = context.applicationContext
         if (onInlinePdfReady != null) {
-            inlinePdfHandlers[webView] = onInlinePdfReady
+            registerInlinePdfHandler(webView, onInlinePdfReady)
         }
 
         webView.setDownloadListener { url, userAgent, contentDisposition, mimeType, contentLength ->
@@ -64,9 +73,9 @@ object VerveDownloadManager {
             val resolvedMime = DownloadResponseValidator.resolveMimeType(guessedFileName, mimeType)
             val isPdf = resolvedMime.equals("application/pdf", ignoreCase = true) ||
                     guessedFileName.endsWith(".pdf", ignoreCase = true)
-            val resolvedInlinePdfHandler = onInlinePdfReady ?: inlinePdfHandlers[webView]
+            val resolvedHandler = inlinePdfHandlers[webView]
 
-            if (isPdf && resolvedInlinePdfHandler != null &&
+            if (isPdf && resolvedHandler != null &&
                 (url.startsWith("http://", ignoreCase = true) || url.startsWith("https://", ignoreCase = true))
             ) {
                 networkExecutor.fetchPdfForInlinePreview(
@@ -78,7 +87,9 @@ object VerveDownloadManager {
                     contentDisposition = contentDisposition,
                     mimeType = mimeType,
                     contentLength = contentLength,
-                    onInlinePdfReady = resolvedInlinePdfHandler,
+                    onInlinePdfReady = { cachedUri, resolvedTitle ->
+                        resolvedHandler(cachedUri, resolvedTitle, url)
+                    },
                     onFallbackToDownload = onDownloadStarted
                 )
                 return@setDownloadListener

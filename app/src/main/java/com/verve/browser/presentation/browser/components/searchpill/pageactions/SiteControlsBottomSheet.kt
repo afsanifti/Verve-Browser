@@ -137,7 +137,7 @@ fun SiteControlsBottomSheet(
     ModalBottomSheet(
         onDismissRequest = onDismissRequest,
         sheetState = sheetState,
-        shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
+        shape = RoundedCornerShape(topStart = 40.dp, topEnd = 40.dp),
         containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
         dragHandle = null
     ) {

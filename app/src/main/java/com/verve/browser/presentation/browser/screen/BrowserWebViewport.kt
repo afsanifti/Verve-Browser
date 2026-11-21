@@ -113,7 +113,13 @@ internal fun BrowserWebViewport(
                 pdfUri = activePdfUri,
                 pdfUriString = activePdfUriString,
                 pdfTitle = activePdfTitle,
-                onClose = { viewModel.closeInlinePdf(uiState.activeTabId) },
+                onClose = {
+                    if (uiState.tabs.size > 1 || activePdfUriString.startsWith("file://", ignoreCase = true)) {
+                        viewModel.closeTab(uiState.activeTabId)
+                    } else {
+                        viewModel.closeInlinePdf(uiState.activeTabId)
+                    }
+                },
                 modifier = Modifier
                     .fillMaxSize()
                     .graphicsLayer { alpha = if (isCarouselActive) 0f else 1f }
@@ -128,8 +134,13 @@ internal fun BrowserWebViewport(
                 thumbnailCache = thumbnailCache,
                 onWebViewCreated = { createdWebView ->
                     WebViewThemeSync.applyToWebView(createdWebView, isDarkTheme)
-                    VerveDownloadManager.registerInlinePdfHandler(createdWebView) { pdfUri, title ->
-                        viewModel.openInlinePdf(currentTabId, pdfUri, title)
+                    VerveDownloadManager.registerInlinePdfWithSourceHandler(createdWebView) { pdfUri, title, sourceUrl ->
+                        viewModel.openInlinePdf(
+                            tabId = currentTabId,
+                            uri = pdfUri,
+                            title = title,
+                            sourceUrl = sourceUrl
+                        )
                     }
                     onWebViewCreated(createdWebView)
                 },

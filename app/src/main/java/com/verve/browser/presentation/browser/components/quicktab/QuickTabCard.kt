@@ -1,9 +1,19 @@
 package com.verve.browser.presentation.browser.components.quicktab
 
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutLinearInEasing
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.VisibilityThreshold
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.awaitHorizontalTouchSlopOrCancellation
+import androidx.compose.foundation.gestures.horizontalDrag
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -31,28 +41,60 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.positionChange
+import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.lerp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.zIndex
 import com.verve.browser.R
 import com.verve.browser.presentation.browser.BrowserTab
 import com.verve.browser.presentation.browser.TabStack
 import com.verve.browser.presentation.browser.components.searchpill.extractDisplayDomain
+import kotlin.math.abs
+import kotlinx.coroutines.launch
+
+private val GridSwipeSnapBackSpring = spring<Float>(
+    dampingRatio = 1.0f,
+    stiffness = 420f
+)
+
+private val GridSwipeDismissExitSpec = tween<Float>(
+    durationMillis = 180,
+    easing = FastOutLinearInEasing
+)
+
+private val GridReflowPlacementSpring = spring(
+    dampingRatio = 1.0f,
+    stiffness = 360f,
+    visibilityThreshold = IntOffset.VisibilityThreshold
+)
 
 @Composable
 internal fun ActiveTabDomainChip(
@@ -166,7 +208,6 @@ internal fun QuickTabsGridView(
     onCloseTab: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val haptic = LocalHapticFeedback.current
     val gridState = rememberLazyGridState()
     val stacksById = remember(tabStacks) { tabStacks.associateBy { it.id } }
 
@@ -190,20 +231,163 @@ internal fun QuickTabsGridView(
             key = { it.id }
         ) { tab ->
             val stack = tab.stackId?.let { stacksById[it] }
-            ChromeGridTabCard(
+            var isElevated by remember(tab.id) { mutableStateOf(false) }
+
+            SwipeToCloseGridTabCard(
                 tab = tab,
                 stackTitle = stack?.title,
                 isActive = tab.id == activeTabId,
                 thumbnail = thumbnailProvider(tab.id),
-                onClick = { onSelectTab(tab.id) },
-                onCloseClick = {
-                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                    onCloseTab(tab.id)
-                },
-                modifier = Modifier.animateItem()
+                onSelectTab = { onSelectTab(tab.id) },
+                onCloseTab = { onCloseTab(tab.id) },
+                onElevationChanged = { elevated -> isElevated = elevated },
+                modifier = Modifier
+                    .zIndex(if (isElevated) 10f else 0f)
+                    .animateItem(
+                        fadeInSpec = tween(durationMillis = 180, easing = FastOutSlowInEasing),
+                        placementSpec = GridReflowPlacementSpring,
+                        fadeOutSpec = null
+                    )
             )
         }
     }
+}
+
+@Composable
+private fun SwipeToCloseGridTabCard(
+    tab: BrowserTab,
+    stackTitle: String?,
+    isActive: Boolean,
+    thumbnail: ImageBitmap?,
+    onSelectTab: () -> Unit,
+    onCloseTab: () -> Unit,
+    onElevationChanged: (Boolean) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val density = LocalDensity.current
+    val haptic = LocalHapticFeedback.current
+    val coroutineScope = rememberCoroutineScope()
+    val currentOnCloseTab by rememberUpdatedState(onCloseTab)
+    val currentOnElevationChanged by rememberUpdatedState(onElevationChanged)
+
+    val offsetX = remember { Animatable(0f) }
+    var cardWidthPx by remember { mutableFloatStateOf(0f) }
+    var isDismissing by remember { mutableStateOf(false) }
+
+    val minDismissThresholdPx = with(density) { 64.dp.toPx() }
+    val safeCardWidth = cardWidthPx.coerceAtLeast(1f)
+    val currentOffset = offsetX.value
+
+    fun dismissCard(exitSign: Float, initialVelocity: Float, emitHaptic: Boolean) {
+        if (isDismissing) return
+        isDismissing = true
+        currentOnElevationChanged(true)
+        val exitTargetPx = exitSign * (cardWidthPx.coerceAtLeast(280f) * 1.45f)
+        coroutineScope.launch {
+            if (emitHaptic) {
+                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+            }
+            offsetX.animateTo(
+                targetValue = exitTargetPx,
+                initialVelocity = initialVelocity,
+                animationSpec = GridSwipeDismissExitSpec
+            )
+            currentOnCloseTab()
+        }
+    }
+
+    // Pure horizontal translation + progressive fade matching Chrome's grid tab dismissal
+    val fadeDistancePx = (safeCardWidth * 1.35f).coerceAtLeast(1f)
+    val cardAlpha = (1f - (abs(currentOffset) / fadeDistancePx)).coerceIn(0f, 1f)
+
+    ChromeGridTabCard(
+        tab = tab,
+        stackTitle = stackTitle,
+        isActive = isActive,
+        thumbnail = thumbnail,
+        onClick = {
+            if (!isDismissing && abs(offsetX.value) < 2f) {
+                onSelectTab()
+            }
+        },
+        onCloseClick = {
+            dismissCard(exitSign = 1f, initialVelocity = 0f, emitHaptic = true)
+        },
+        modifier = modifier
+            .fillMaxWidth()
+            .onSizeChanged { size -> cardWidthPx = size.width.toFloat() }
+            .pointerInput(tab.id, minDismissThresholdPx) {
+                awaitEachGesture {
+                    val down = awaitFirstDown(requireUnconsumed = false)
+                    if (isDismissing) return@awaitEachGesture
+
+                    val velocityTracker = VelocityTracker()
+                    velocityTracker.addPosition(down.uptimeMillis, down.position)
+                    var thresholdHapticFired = false
+
+                    val dragChange = awaitHorizontalTouchSlopOrCancellation(down.id) { change, overSlop ->
+                        change.consume()
+                        velocityTracker.addPosition(change.uptimeMillis, change.position)
+                        currentOnElevationChanged(true)
+                        coroutineScope.launch {
+                            offsetX.stop()
+                            offsetX.snapTo(offsetX.value + overSlop)
+                        }
+                    }
+
+                    if (dragChange != null) {
+                        val completed = horizontalDrag(dragChange.id) { change ->
+                            val dx = change.positionChange().x
+                            change.consume()
+                            velocityTracker.addPosition(change.uptimeMillis, change.position)
+
+                            val nextOffset = offsetX.value + dx
+                            val activeThreshold = (cardWidthPx * 0.38f).coerceAtLeast(minDismissThresholdPx)
+                            if (abs(nextOffset) >= activeThreshold && !thresholdHapticFired) {
+                                thresholdHapticFired = true
+                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            } else if (abs(nextOffset) < activeThreshold && thresholdHapticFired) {
+                                thresholdHapticFired = false
+                            }
+
+                            coroutineScope.launch {
+                                offsetX.snapTo(nextOffset)
+                            }
+                        }
+
+                        val velocityX = velocityTracker.calculateVelocity().x
+                        val finalOffset = offsetX.value
+                        val activeThreshold = (cardWidthPx * 0.38f).coerceAtLeast(minDismissThresholdPx)
+                        val isFlingDismiss = (velocityX > 720f && finalOffset > cardWidthPx * 0.12f) ||
+                                (velocityX < -720f && finalOffset < -cardWidthPx * 0.12f)
+
+                        if (completed && (abs(finalOffset) >= activeThreshold || isFlingDismiss)) {
+                            val exitSign = if (finalOffset >= 0f) 1f else -1f
+                            dismissCard(
+                                exitSign = exitSign,
+                                initialVelocity = velocityX,
+                                emitHaptic = !thresholdHapticFired
+                            )
+                        } else {
+                            coroutineScope.launch {
+                                offsetX.animateTo(
+                                    targetValue = 0f,
+                                    initialVelocity = velocityX,
+                                    animationSpec = GridSwipeSnapBackSpring
+                                )
+                                if (!isDismissing) {
+                                    currentOnElevationChanged(false)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            .graphicsLayer {
+                translationX = currentOffset
+                alpha = cardAlpha
+            }
+    )
 }
 
 @Composable
