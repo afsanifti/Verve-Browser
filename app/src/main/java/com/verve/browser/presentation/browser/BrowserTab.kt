@@ -16,7 +16,9 @@ data class BrowserTab(
     val loadingProgress: Int = 0,
     val canGoBack: Boolean = false,
     val canGoForward: Boolean = false,
-    val lastAccessedAt: Long = System.currentTimeMillis()
+    val lastAccessedAt: Long = System.currentTimeMillis(),
+    val activePdfUriString: String? = null,
+    val activePdfTitle: String? = null
 )
 
 data class TabStack(

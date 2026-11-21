@@ -62,11 +62,19 @@ fun DownloadsRoute(
             VerveDownloadManager.cancelDownload(context, target.id)
         },
         onOpenDownload = { target ->
-            val downloadUri = resolveAvailableDownloadUri(context, target)
-            if (downloadUri != null) {
-                openDownloadedUri(context, target, downloadUri)
+            if (target.status == DownloadStatus.FAILED) {
+                Toast.makeText(
+                    context,
+                    target.errorMessage ?: "Download failed",
+                    Toast.LENGTH_LONG
+                ).show()
             } else {
-                onOpenUrl(target.url)
+                val downloadUri = resolveAvailableDownloadUri(context, target)
+                if (downloadUri != null) {
+                    openDownloadedUri(context, target, downloadUri)
+                } else {
+                    onOpenUrl(target.url)
+                }
             }
         },
         onShareDownload = { target ->

@@ -71,7 +71,7 @@ I built **Verve** out of a deep interest in mobile UI design and everyday usabil
       </td>
       <td align="center" width="25%">
         <img src="docs/screenshots/verve-2.png" width="100%" alt="Search Bar"><br>
-        <sub><b>Search Bar</b></sub>
+        <sub><b>Tab Screen</b></sub>
       </td>
       <td align="center" width="25%">
         <img src="docs/screenshots/verve-3.png" width="100%" alt="Browsing View"><br>

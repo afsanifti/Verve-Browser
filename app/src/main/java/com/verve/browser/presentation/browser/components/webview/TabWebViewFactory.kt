@@ -2,7 +2,6 @@ package com.verve.browser.presentation.browser.components.webview
 
 import android.annotation.SuppressLint
 import android.content.Context
-import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
@@ -19,6 +18,7 @@ import com.verve.browser.presentation.browser.BrowserViewModel
 import com.verve.browser.presentation.browser.util.TabPageColorCache
 import com.verve.browser.presentation.browser.util.TabThumbnailCache
 import com.verve.browser.presentation.browser.util.TabWebViewPool
+import com.verve.browser.presentation.browser.util.VervePdfBridge
 import com.verve.browser.presentation.browser.util.WebSnapshotColorExtractor
 
 private const val IS_VIDEO_PLAYING_SCRIPT = """
@@ -62,9 +62,7 @@ internal fun createTabWebView(
         isHorizontalScrollBarEnabled = false
         overScrollMode = View.OVER_SCROLL_IF_CONTENT_SCROLLS
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            setRendererPriorityPolicy(WebView.RENDERER_PRIORITY_IMPORTANT, true)
-        }
+        setRendererPriorityPolicy(WebView.RENDERER_PRIORITY_IMPORTANT, true)
 
         ViewCompat.setOnApplyWindowInsetsListener(this) { _, _ ->
             WindowInsetsCompat.CONSUMED
@@ -91,13 +89,25 @@ internal fun createTabWebView(
                 saveFormData = false
             }
         }
-        if (initialIncognito) {
-            CookieManager.getInstance().setAcceptThirdPartyCookies(this, false)
-        }
+
+        val cookieManager = CookieManager.getInstance()
+        cookieManager.setAcceptCookie(true)
+        cookieManager.setAcceptThirdPartyCookies(this, !initialIncognito)
 
         val mainHandler = Handler(Looper.getMainLooper())
         val pageColorCache = TabPageColorCache(maxEntries = 10)
         var isDestroyed = false
+
+        addJavascriptInterface(
+            VervePdfBridge(
+                context = context.applicationContext,
+                onPdfReady = { pdfUri, title ->
+                    viewModel.openInlinePdf(tabId = tabId, uri = pdfUri, title = title)
+                }
+            ),
+            "VervePdfBridge"
+        )
+
         var isTouchActive = false
         var isFlingScrolling = false
         var isColorExtractionInFlight = false
@@ -211,7 +221,6 @@ internal fun createTabWebView(
             if (now - lastDomSnapshotTimestampMs < 1100L) return@Runnable
             lastDomSnapshotTimestampMs = now
 
-            // Avoid software WebView.draw() snapshots while a hardware video layer is actively playing
             this@apply.evaluateJavascript(IS_VIDEO_PLAYING_SCRIPT) { result ->
                 if (isDestroyed || !canSafelyAccessWebView() || isScrollBusy()) return@evaluateJavascript
                 if (result?.contains("1") == true) return@evaluateJavascript
@@ -379,13 +388,14 @@ internal fun createTabWebView(
             onNavigatedUrl = { navigatedUrl ->
                 lastRequestedCollapsed = false
                 accumulatedScrollDy = 0
-                if (isTabIncognito()) {
+                val incognito = isTabIncognito()
+                if (incognito) {
                     settings.cacheMode = WebSettings.LOAD_NO_CACHE
                     settings.databaseEnabled = false
                     @Suppress("DEPRECATION")
                     settings.saveFormData = false
-                    CookieManager.getInstance().setAcceptThirdPartyCookies(this@apply, false)
                 }
+                CookieManager.getInstance().setAcceptThirdPartyCookies(this@apply, !incognito)
                 tabWebViewPool.setLastRequestedUrl(tabId, navigatedUrl)
                 viewModel.onPageUrlUpdated(tabId, navigatedUrl)
             },
@@ -398,6 +408,7 @@ internal fun createTabWebView(
                 edgeProbeScheduler.dispose()
                 WebSnapshotColorExtractor.cancel(this@apply)
                 pageColorCache.clear()
+                runCatching { removeJavascriptInterface("VervePdfBridge") }
                 onHideCustomView()
             }
         )

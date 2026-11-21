@@ -118,6 +118,8 @@ internal class VerveWebViewClient(
                 return
             }
 
+            view?.evaluateJavascript(PdfInterceptorScript.SCRIPT, null)
+
             isMainFrameLoading = true
             if (pendingFallbackUrl == null || url == pendingFallbackUrl) {
                 pendingFallbackUrl = null
@@ -149,6 +151,7 @@ internal class VerveWebViewClient(
     override fun onPageCommitVisible(view: WebView?, url: String?) {
         super.onPageCommitVisible(view, url)
         if (!url.isNullOrBlank() && url != "about:blank" && !isShowingErrorPage) {
+            view?.evaluateJavascript(PdfInterceptorScript.SCRIPT, null)
             consecutiveRenderCrashes = 0
             attemptedFallbackUrls.clear()
             edgeProbeScheduler.scheduleDebounced(40L)
@@ -172,6 +175,7 @@ internal class VerveWebViewClient(
         viewModel.onPageLoadFinished(tabId)
 
         if (!url.isNullOrBlank() && url != "about:blank" && !isShowingErrorPage) {
+            view?.evaluateJavascript(PdfInterceptorScript.SCRIPT, null)
             edgeProbeScheduler.scheduleDebounced(120L)
             edgeProbeScheduler.attachDomMutationObserver()
             scheduleThumbnailCapture(280L)

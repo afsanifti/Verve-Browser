@@ -35,7 +35,11 @@ data class DownloadItem(
     val remainingSeconds: Int? = null,
     val mimeType: String = "*/*",
     val negotiatedProtocol: String? = null,
-    val contentUri: String? = null
+    val contentUri: String? = null,
+    val refererUrl: String? = null,
+    val userAgent: String? = null,
+    val isPostRequest: Boolean = false,
+    val errorMessage: String? = null
 ) {
     val progress: Float
         get() = if (totalBytes > 0L) {
@@ -111,8 +115,8 @@ internal fun inferDownloadFileType(fileName: String, mimeType: String?): Downloa
                 mime == "application/vnd.android.package-archive" -> DownloadFileType.ARCHIVE
         ext in setOf("jpg", "jpeg", "png", "webp", "gif", "svg") ||
                 mime.startsWith("image/") -> DownloadFileType.IMAGE
-        ext in setOf("txt", "doc", "docx", "md", "csv", "json", "xml") ||
-                mime.startsWith("text/") -> DownloadFileType.DOCUMENT
+        ext in setOf("txt", "doc", "docx", "md", "csv", "json", "xml", "xls", "xlsx") ||
+                mime.startsWith("text/") || mime.contains("spreadsheet") || mime.contains("document") -> DownloadFileType.DOCUMENT
         else -> DownloadFileType.OTHER
     }
 }

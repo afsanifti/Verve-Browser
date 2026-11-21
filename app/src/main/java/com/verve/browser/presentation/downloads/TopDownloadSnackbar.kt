@@ -64,7 +64,17 @@ fun TopDownloadSnackbar(
     ) {
         if (item != null) {
             val isCompleted = item.status == DownloadStatus.COMPLETED
-            val headerText = if (isCompleted) "Download complete" else "Downloading file"
+            val isFailed = item.status == DownloadStatus.FAILED
+            val headerText = when {
+                isCompleted -> "Download complete"
+                isFailed -> "Download failed"
+                else -> "Downloading file"
+            }
+            val subtitleText = if (isFailed) {
+                item.errorMessage ?: item.fileName
+            } else {
+                item.fileName
+            }
 
             Surface(
                 onClick = onOpenDownloadsClick,
@@ -73,7 +83,11 @@ fun TopDownloadSnackbar(
                 color = MaterialTheme.colorScheme.surfaceContainerHigh,
                 border = BorderStroke(
                     width = 1.dp,
-                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f)
+                    color = if (isFailed) {
+                        MaterialTheme.colorScheme.error.copy(alpha = 0.55f)
+                    } else {
+                        MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f)
+                    }
                 ),
                 shadowElevation = 6.dp
             ) {
@@ -87,37 +101,48 @@ fun TopDownloadSnackbar(
                         modifier = Modifier.size(36.dp),
                         contentAlignment = Alignment.Center
                     ) {
-                        if (isCompleted) {
-                            Icon(
-                                imageVector = DownloadsSymbols.CheckCircle,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(24.dp)
-                            )
-                        } else {
-                            if (item.totalBytes > 0L) {
-                                CircularProgressIndicator(
-                                    progress = { item.progress },
-                                    modifier = Modifier.size(34.dp),
-                                    color = MaterialTheme.colorScheme.primary,
-                                    trackColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.2f),
-                                    strokeWidth = 3.dp,
-                                    strokeCap = StrokeCap.Round
-                                )
-                            } else {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(34.dp),
-                                    color = MaterialTheme.colorScheme.primary,
-                                    strokeWidth = 3.dp,
-                                    strokeCap = StrokeCap.Round
+                        when {
+                            isCompleted -> {
+                                Icon(
+                                    imageVector = DownloadsSymbols.CheckCircle,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(24.dp)
                                 )
                             }
-                            Icon(
-                                imageVector = DownloadsSymbols.Download,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(16.dp)
-                            )
+                            isFailed -> {
+                                Icon(
+                                    imageVector = DownloadsSymbols.Close,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.error,
+                                    modifier = Modifier.size(24.dp)
+                                )
+                            }
+                            else -> {
+                                if (item.totalBytes > 0L) {
+                                    CircularProgressIndicator(
+                                        progress = { item.progress },
+                                        modifier = Modifier.size(34.dp),
+                                        color = MaterialTheme.colorScheme.primary,
+                                        trackColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.2f),
+                                        strokeWidth = 3.dp,
+                                        strokeCap = StrokeCap.Round
+                                    )
+                                } else {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(34.dp),
+                                        color = MaterialTheme.colorScheme.primary,
+                                        strokeWidth = 3.dp,
+                                        strokeCap = StrokeCap.Round
+                                    )
+                                }
+                                Icon(
+                                    imageVector = DownloadsSymbols.Download,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
                         }
                     }
 
@@ -126,7 +151,7 @@ fun TopDownloadSnackbar(
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
                             text = headerText,
-                            color = MaterialTheme.colorScheme.onSurface,
+                            color = if (isFailed) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
                             style = MaterialTheme.typography.labelLarge.copy(
                                 fontSize = 14.sp,
                                 fontWeight = FontWeight.SemiBold
@@ -135,7 +160,7 @@ fun TopDownloadSnackbar(
                             overflow = TextOverflow.Ellipsis
                         )
                         Text(
-                            text = item.fileName,
+                            text = subtitleText,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             style = MaterialTheme.typography.bodySmall.copy(
                                 fontSize = 12.sp

@@ -1,5 +1,6 @@
 package com.verve.browser.presentation.browser
 
+import android.net.Uri
 import androidx.compose.ui.graphics.Color
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -71,7 +72,9 @@ class BrowserViewModel(
                             tab.copy(
                                 isMainFrameLoading = false,
                                 isLoading = false,
-                                loadingProgress = 0
+                                loadingProgress = 0,
+                                activePdfUriString = null,
+                                activePdfTitle = null
                             )
                         },
                         tabStacks = state.tabStacks,
@@ -215,7 +218,7 @@ class BrowserViewModel(
                 searchSuggestions = if (nextIncognito) emptyList() else state.recentSearches.take(4),
                 siteSeedColor = if (nextIncognito) null else state.siteSeedColor,
                 pendingSiteSeedColor = if (nextIncognito) null else state.pendingSiteSeedColor,
-                isThemeExtracting = if (nextIncognito) false else state.isThemeExtracting
+                isThemeExtracting = !nextIncognito && state.isThemeExtracting
             )
         }
     }
@@ -247,11 +250,6 @@ class BrowserViewModel(
     fun onPageLoadFinished(tabId: String) =
         pageAppearanceController.onPageLoadFinished(tabId = tabId)
 
-    fun onThemeExtractionStarted(tabId: String) {
-        if (_uiState.value.tabs.firstOrNull { it.id == tabId }?.isIncognito == true) return
-        pageAppearanceController.onThemeExtractionStarted(tabId = tabId)
-    }
-
     fun onSnapshotColorReady(tabId: String, color: Color?) {
         if (_uiState.value.tabs.firstOrNull { it.id == tabId }?.isIncognito == true) {
             pageAppearanceController.onSnapshotColorReady(tabId = tabId, color = null)
@@ -265,20 +263,25 @@ class BrowserViewModel(
 
     fun onRevealTimeout() = pageAppearanceController.onRevealTimeout()
 
-    fun updateSiteSeedColor(tabId: String, color: Color?) {
-        val resolvedColor = if (_uiState.value.tabs.firstOrNull { it.id == tabId }?.isIncognito == true) {
-            null
-        } else {
-            color
-        }
-        pageAppearanceController.updateSiteSeedColor(tabId = tabId, color = resolvedColor)
-    }
-
     fun updateTopRegionColor(tabId: String, color: Color?) =
         pageAppearanceController.updateTopRegionColor(tabId = tabId, color = color)
 
     fun updateBottomRegionColor(tabId: String, color: Color?) =
         pageAppearanceController.updateBottomRegionColor(tabId = tabId, color = color)
+
+    fun openInlinePdf(tabId: String, uri: Uri, title: String) {
+        dismissQuickClosePrompt()
+        searchSuggestionsController.cancelPendingSuggestions()
+        tabSessionController.openInlinePdf(
+            tabId = tabId,
+            pdfUriString = uri.toString(),
+            pdfTitle = title
+        )
+    }
+
+    fun closeInlinePdf(tabId: String = _uiState.value.activeTabId) {
+        tabSessionController.closeInlinePdf(tabId)
+    }
 
     fun navigateHome() {
         dismissQuickClosePrompt()

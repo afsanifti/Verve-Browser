@@ -249,6 +249,53 @@ internal class TabSessionController(
         }
     }
 
+    fun openInlinePdf(tabId: String, pdfUriString: String, pdfTitle: String) {
+        uiState.update { state ->
+            val updatedTabs = state.tabs.map { tab ->
+                if (tab.id == tabId) {
+                    tab.copy(
+                        activePdfUriString = pdfUriString,
+                        activePdfTitle = pdfTitle,
+                        isMainFrameLoading = false,
+                        isLoading = false,
+                        loadingProgress = 100
+                    )
+                } else {
+                    tab
+                }
+            }
+            if (state.activeTabId == tabId) {
+                state.copy(
+                    tabs = updatedTabs,
+                    isSearchFocused = false,
+                    isTabSwitcherOpen = false,
+                    isToolbarCollapsed = false,
+                    isToolbarManuallyCollapsed = false,
+                    isLoading = false,
+                    loadingProgress = 100
+                )
+            } else {
+                state.copy(tabs = updatedTabs)
+            }
+        }
+    }
+
+    fun closeInlinePdf(tabId: String) {
+        uiState.update { state ->
+            val updatedTabs = state.tabs.map { tab ->
+                if (tab.id == tabId) {
+                    tab.copy(
+                        activePdfUriString = null,
+                        activePdfTitle = null
+                    )
+                } else {
+                    tab
+                }
+            }
+            state.copy(tabs = updatedTabs)
+        }
+    }
+
     fun navigateHome() {
         uiState.update { state ->
             val updatedTabs = state.tabs.map { tab ->
@@ -263,7 +310,9 @@ internal class TabSessionController(
                         isLoading = false,
                         loadingProgress = 0,
                         canGoBack = false,
-                        canGoForward = false
+                        canGoForward = false,
+                        activePdfUriString = null,
+                        activePdfTitle = null
                     )
                 } else {
                     tab
@@ -318,7 +367,9 @@ internal class TabSessionController(
                         isMainFrameLoading = true,
                         isLoading = true,
                         loadingProgress = 0,
-                        lastAccessedAt = System.currentTimeMillis()
+                        lastAccessedAt = System.currentTimeMillis(),
+                        activePdfUriString = null,
+                        activePdfTitle = null
                     )
                 } else {
                     tab

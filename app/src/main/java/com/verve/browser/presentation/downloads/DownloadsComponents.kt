@@ -410,6 +410,7 @@ private fun DownloadHistorySegmentedRow(
     modifier: Modifier = Modifier
 ) {
     var isMenuOpen by remember { mutableStateOf(false) }
+    val isFailed = item.status == DownloadStatus.FAILED
 
     SegmentedListItem(
         onClick = onClick,
@@ -419,9 +420,9 @@ private fun DownloadHistorySegmentedRow(
         modifier = modifier.fillMaxWidth(),
         leadingContent = {
             Icon(
-                imageVector = fileTypeLeadingIcon(item.fileType),
+                imageVector = if (isFailed) DownloadsSymbols.Close else fileTypeLeadingIcon(item.fileType),
                 contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                tint = if (isFailed) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.size(22.dp)
             )
         },
@@ -438,13 +439,18 @@ private fun DownloadHistorySegmentedRow(
             )
         },
         supportingContent = {
+            val subtitleText = if (isFailed) {
+                listOfNotNull(item.errorMessage ?: "Download failed", item.domain).joinToString(" · ")
+            } else {
+                "${formatFileSize(item.totalBytes)} · ${item.domain}"
+            }
             Text(
-                text = "${formatFileSize(item.totalBytes)} · ${item.domain}",
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                text = subtitleText,
+                color = if (isFailed) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
                 style = MaterialTheme.typography.bodySmall.copy(
                     fontSize = 13.sp
                 ),
-                maxLines = 1,
+                maxLines = 2,
                 overflow = TextOverflow.Ellipsis
             )
         },
@@ -462,16 +468,18 @@ private fun DownloadHistorySegmentedRow(
                     expanded = isMenuOpen,
                     onDismissRequest = { isMenuOpen = false }
                 ) {
-                    DropdownMenuItem(
-                        text = { Text("Open") },
-                        leadingIcon = {
-                            Icon(DownloadsSymbols.OpenInNew, contentDescription = null)
-                        },
-                        onClick = {
-                            isMenuOpen = false
-                            onClick()
-                        }
-                    )
+                    if (!isFailed && item.contentUri != null) {
+                        DropdownMenuItem(
+                            text = { Text("Open") },
+                            leadingIcon = {
+                                Icon(DownloadsSymbols.OpenInNew, contentDescription = null)
+                            },
+                            onClick = {
+                                isMenuOpen = false
+                                onClick()
+                            }
+                        )
+                    }
                     DropdownMenuItem(
                         text = { Text("Share") },
                         leadingIcon = {

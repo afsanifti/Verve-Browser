@@ -3,4 +3,8 @@
     <cache-path
         name="apk_updates"
         path="updates/" />
+    <cache-path name="inline_pdfs" path="inline_pdfs/" />
+    <cache-path name="shared_cache" path="." />
+    <files-path name="files" path="." />
+    <external-path name="external" path="." />
 </paths>

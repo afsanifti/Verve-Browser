@@ -36,8 +36,10 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.net.toUri
 import com.verve.browser.R
+import com.verve.browser.data.download.VerveDownloadManager
 import com.verve.browser.presentation.browser.BrowserUiState
 import com.verve.browser.presentation.browser.BrowserViewModel
+import com.verve.browser.presentation.browser.components.InlinePdfViewerOverlay
 import com.verve.browser.presentation.browser.components.VerveWebView
 import com.verve.browser.presentation.browser.util.TabThumbnailCache
 import com.verve.browser.presentation.browser.util.TabWebViewPool
@@ -86,6 +88,12 @@ internal fun BrowserWebViewport(
         null
     }
 
+    val activePdfUriString = activeTab?.activePdfUriString
+    val activePdfUri = remember(activePdfUriString) {
+        activePdfUriString?.let { runCatching { it.toUri() }.getOrNull() }
+    }
+    val activePdfTitle = activeTab?.activePdfTitle?.ifBlank { "document.pdf" } ?: "document.pdf"
+
     BoxWithConstraints(
         modifier = modifier
             .fillMaxSize()
@@ -100,16 +108,29 @@ internal fun BrowserWebViewport(
         val gutterPx = with(density) { TabCarouselGutterDp.toPx() }
         val pageStridePx = viewportWidthPx + gutterPx
 
-        // Base live WebView (remains mounted so cancelling a swipe is instantaneous)
-        if (isOnWebPage) {
+        if (isOnWebPage && activePdfUri != null && activePdfUriString != null) {
+            InlinePdfViewerOverlay(
+                pdfUri = activePdfUri,
+                pdfUriString = activePdfUriString,
+                pdfTitle = activePdfTitle,
+                onClose = { viewModel.closeInlinePdf(uiState.activeTabId) },
+                modifier = Modifier
+                    .fillMaxSize()
+                    .graphicsLayer { alpha = if (isCarouselActive) 0f else 1f }
+            )
+        } else if (isOnWebPage) {
+            val currentTabId = uiState.activeTabId
             VerveWebView(
-                tabId = uiState.activeTabId,
+                tabId = currentTabId,
                 url = uiState.currentUrl,
                 viewModel = viewModel,
                 tabWebViewPool = tabWebViewPool,
                 thumbnailCache = thumbnailCache,
                 onWebViewCreated = { createdWebView ->
                     WebViewThemeSync.applyToWebView(createdWebView, isDarkTheme)
+                    VerveDownloadManager.registerInlinePdfHandler(createdWebView) { pdfUri, title ->
+                        viewModel.openInlinePdf(currentTabId, pdfUri, title)
+                    }
                     onWebViewCreated(createdWebView)
                 },
                 onShowCustomView = onShowCustomView,
@@ -130,7 +151,6 @@ internal fun BrowserWebViewport(
                     .fillMaxSize()
                     .background(TabCarouselBackdropColor)
             ) {
-                // Incoming left neighbor tab (approaches from left when swiping right)
                 if (carouselOffsetFraction > 0f && leftTab != null) {
                     TabCarouselPageCard(
                         tabId = leftTab.id,
@@ -148,7 +168,6 @@ internal fun BrowserWebViewport(
                     )
                 }
 
-                // Outgoing active tab
                 TabCarouselPageCard(
                     tabId = activeTab.id,
                     tabUrl = activeTab.url,
@@ -164,7 +183,6 @@ internal fun BrowserWebViewport(
                         }
                 )
 
-                // Incoming right neighbor tab (approaches from right when swiping left)
                 if (carouselOffsetFraction < 0f && rightTab != null) {
                     TabCarouselPageCard(
                         tabId = rightTab.id,

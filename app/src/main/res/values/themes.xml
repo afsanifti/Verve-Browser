@@ -1,9 +1,4 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-
-    <style name="Theme.VerveBrowser" parent="android:Theme.DeviceDefault.DayNight">
-        <item name="android:windowNoTitle">true</item>
-        <item name="android:windowActionBar">false</item>
-    </style>
-
+    <style name="Theme.VerveBrowser" parent="Theme.Material3.DayNight.NoActionBar" />
 </resources>

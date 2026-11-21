@@ -20,10 +20,15 @@ internal fun BrowserBackHandler(
     viewModel: BrowserViewModel
 ) {
     val focusManager = LocalFocusManager.current
+    val hasActiveInlinePdf = uiState.activeTab?.activePdfUriString != null
     val canGoBackInWeb = isOnWebPage && (uiState.canGoBack || (webViewRef?.canGoBack() == true))
 
     BackHandler(
-        enabled = uiState.isTabSwitcherOpen || uiState.isSearchFocused || isOnWebPage || canGoBackInWeb
+        enabled = uiState.isTabSwitcherOpen ||
+                uiState.isSearchFocused ||
+                hasActiveInlinePdf ||
+                isOnWebPage ||
+                canGoBackInWeb
     ) {
         if (uiState.isTabSwitcherOpen) {
             viewModel.closeTabSwitcher()
@@ -36,9 +41,13 @@ internal fun BrowserBackHandler(
             return@BackHandler
         }
 
-        val webView = webViewRef
-        if (webView != null && webView.canGoBack()) {
-            webView.goBack()
+        if (hasActiveInlinePdf) {
+            viewModel.closeInlinePdf(uiState.activeTabId)
+            return@BackHandler
+        }
+
+        if (webViewRef != null && webViewRef.canGoBack()) {
+            webViewRef.goBack()
         } else {
             val activeId = uiState.activeTabId
             onClearWebViewRef()

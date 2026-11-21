@@ -3,7 +3,6 @@ package com.verve.browser
 import android.content.Intent
 import android.os.Bundle
 import android.util.Log
-import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.material3.Surface
@@ -11,6 +10,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import com.verve.browser.data.update.UpdateCheckWorker
@@ -20,7 +20,7 @@ import com.verve.browser.presentation.browser.BrowserViewModel
 import com.verve.browser.presentation.theme.ThemePreferences
 import com.verve.browser.presentation.theme.VerveBrowserTheme
 
-class MainActivity : ComponentActivity() {
+class MainActivity : FragmentActivity() {
 
     private var openUpdateSheetTrigger by mutableStateOf(false)
     private var browserViewModel: BrowserViewModel? = null

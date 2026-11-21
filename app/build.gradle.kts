@@ -114,6 +114,9 @@ dependencies {
     implementation(libs.icons.material.symbols.outlined.cmp)
     implementation(libs.icons.material.symbols.rounded.filled.cmp)
 
+    implementation("androidx.pdf:pdf-viewer-fragment:1.0.0-beta01")
+    implementation("androidx.fragment:fragment-compose:1.8.6")
+
     testImplementation("io.mockk:mockk:1.13.12")
     testImplementation("com.google.truth:truth:1.4.2")
     testImplementation("app.cash.turbine:turbine:1.2.1")

@@ -21,6 +21,9 @@ class VerveApplication : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        if (android.os.Process.isIsolated()) {
+            return
+        }
         ThemePreferences.init(this)
 
         tabSessionStorage = TabSessionStorage(this)
