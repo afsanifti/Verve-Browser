@@ -1,6 +1,8 @@
 ✨ What's New
 
-• Full-Screen Video Playback: Watch web videos in full screen with automatic screen rotation, hidden system bars, and back-gesture support to exit.
-• Smoother Video Experience: Fixed screen flickering during video playback and ensured video player controls stay positioned cleanly above the bottom search pill.
-• Better New-Tab Links: Links that open in a new window now open smoothly in a new tab, accompanied by a 2-second quick-close button so you can easily dismiss it and go back.
-• Stability Improvements: Added automatic tab recovery if a webpage renderer stops responding.
+- Inline PDF Viewer: Open PDF links and portal documents directly inside Verve in a dedicated tab with built-in text search, save, share, and open-with options.
+- Reliable Portal Downloads: Improved handling for authenticated form submissions and dynamic downloads so files like admit cards and receipts open cleanly.
+- Seamless PDF Back Navigation: Use the system back gesture or top back button to close an open PDF tab and return straight to your previous webpage.
+- Swipe-to-Close in Tab Grid: Swipe any tab card left or right in Grid View to dismiss it with a smooth slide-and-fade animation.
+- Persistent Tab View Preference: Your chosen Grid or Carousel layout in Quick Tabs is now remembered across sessions until you switch it again.
+- Stability Improvements: Fixed theme and isolated process crashes when loading PDF documents.
