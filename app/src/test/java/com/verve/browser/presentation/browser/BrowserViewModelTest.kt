@@ -23,11 +23,19 @@ class BrowserViewModelTest {
     private lateinit var shouldBlockUrlUseCase: ShouldBlockUrlUseCase
     private lateinit var viewModel: BrowserViewModel
 
+    private lateinit var tabSessionStorage: com.verve.browser.data.local.TabSessionStorage
+
     @Before
     fun setUp() {
         Dispatchers.setMain(testDispatcher)
-        shouldBlockUrlUseCase = mockk()
-        viewModel = BrowserViewModel(shouldBlockUrlUseCase)
+        shouldBlockUrlUseCase = mockk(relaxed = true)
+        tabSessionStorage = mockk(relaxed = true) {
+            every { loadSync() } returns null
+        }
+        viewModel = BrowserViewModel(
+            shouldBlockUrlUseCase = shouldBlockUrlUseCase,
+            tabSessionStorage = tabSessionStorage
+        )
     }
 
     @After
@@ -47,7 +55,8 @@ class BrowserViewModelTest {
 
     @Test
     fun `onProgressChanged sets isLoading true when loading is between 1 and 99`() = runTest {
-        viewModel.onProgressChanged(50)
+        val tabId = viewModel.uiState.value.activeTabId
+        viewModel.onProgressChanged(tabId = tabId, progress = 50)
 
         viewModel.uiState.test {
             val state = awaitItem()
@@ -58,7 +67,8 @@ class BrowserViewModelTest {
 
     @Test
     fun `onProgressChanged sets isLoading false when progress reaches 100`() = runTest {
-        viewModel.onProgressChanged(100)
+        val tabId = viewModel.uiState.value.activeTabId
+        viewModel.onProgressChanged(tabId = tabId, progress = 100)
 
         viewModel.uiState.test {
             val state = awaitItem()
@@ -84,7 +94,12 @@ class BrowserViewModelTest {
 
     @Test
     fun `updateNavigationState modifies back and forward flags`() = runTest {
-        viewModel.updateNavigationState(canGoBack = true, canGoForward = false)
+        val tabId = viewModel.uiState.value.activeTabId
+        viewModel.updateNavigationState(
+            tabId = tabId,
+            canGoBack = true,
+            canGoForward = false
+        )
 
         viewModel.uiState.test {
             val state = awaitItem()

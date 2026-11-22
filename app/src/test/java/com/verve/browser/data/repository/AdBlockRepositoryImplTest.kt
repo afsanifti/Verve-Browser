@@ -14,10 +14,16 @@ class AdBlockRepositoryImplTest {
     private lateinit var nativeAdBlocker: NativeAdBlocker
     private lateinit var repository: AdBlockRepositoryImpl
 
+
+
     @Before
     fun setUp() {
+        val context = mockk<android.content.Context>(relaxed = true)
         nativeAdBlocker = mockk(relaxed = true)
-        repository = AdBlockRepositoryImpl(nativeAdBlocker)
+        repository = AdBlockRepositoryImpl(
+            context = context,
+            nativeBlocker = nativeAdBlocker
+        )
     }
 
     @Test

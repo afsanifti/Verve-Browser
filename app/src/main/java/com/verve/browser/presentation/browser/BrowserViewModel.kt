@@ -353,16 +353,44 @@ class BrowserViewModel(
             canGoForward = canGoForward
         )
 
+    fun evaluateResourceRequest(
+        targetUrl: String,
+        pageUrl: String,
+        resourceType: String,
+        method: String = "GET"
+    ): UrlCheckResult {
+        val result = shouldBlockUrlUseCase(targetUrl, pageUrl, resourceType, method)
+        if (result is UrlCheckResult.Block || result is UrlCheckResult.Redirect) {
+            _uiState.update { it.copy(blockedAdsCount = it.blockedAdsCount + 1) }
+        }
+        return result
+    }
+
     fun checkResourceBlocking(targetUrl: String, pageUrl: String, resourceType: String): Boolean {
-        val result = shouldBlockUrlUseCase(targetUrl, pageUrl, resourceType)
-        return when (result) {
-            is UrlCheckResult.Block -> {
-                viewModelScope.launch(Dispatchers.Main) {
-                    _uiState.update { it.copy(blockedAdsCount = it.blockedAdsCount + 1) }
-                }
-                true
-            }
-            UrlCheckResult.Allow -> false
+        return when (evaluateResourceRequest(targetUrl, pageUrl, resourceType)) {
+            is UrlCheckResult.Block, is UrlCheckResult.Redirect -> true
+            UrlCheckResult.Allow, is UrlCheckResult.RewriteUrl -> false
         }
     }
+
+    fun getCosmeticResources(pageUrl: String) =
+        shouldBlockUrlUseCase.getCosmeticResources(pageUrl)
+
+    fun getHiddenClassIdSelectors(
+        pageUrl: String,
+        classes: List<String>,
+        ids: List<String>,
+        exceptions: List<String>
+    ): List<String> = shouldBlockUrlUseCase.getHiddenClassIdSelectors(
+        pageUrl = pageUrl,
+        classes = classes,
+        ids = ids,
+        exceptions = exceptions
+    )
+
+    fun isSiteWhitelisted(pageUrl: String): Boolean =
+        shouldBlockUrlUseCase.isSiteWhitelisted(pageUrl)
+
+    fun toggleSiteWhitelist(pageUrl: String): Boolean =
+        shouldBlockUrlUseCase.toggleSiteWhitelist(pageUrl)
 }

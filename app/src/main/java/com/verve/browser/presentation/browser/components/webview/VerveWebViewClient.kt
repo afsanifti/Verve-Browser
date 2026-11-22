@@ -13,13 +13,12 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import androidx.core.net.toUri
+import androidx.core.text.htmlEncode
 import com.verve.browser.presentation.browser.BrowserViewModel
 import com.verve.browser.presentation.browser.util.TabPageColorCache
 import com.verve.browser.presentation.browser.util.TabWebViewPool
 import com.verve.browser.presentation.browser.util.WebSnapshotColorExtractor
-import java.io.ByteArrayInputStream
-import androidx.core.net.toUri
-import androidx.core.text.htmlEncode
 
 internal class VerveWebViewClient(
     private val tabId: String,
@@ -49,7 +48,22 @@ internal class VerveWebViewClient(
         val uri = request?.url ?: return false
         val scheme = uri.scheme?.lowercase().orEmpty()
 
-        if (scheme == "http" || scheme == "https" || scheme == "about" || scheme == "javascript") {
+        if (scheme == "http" || scheme == "https") {
+            // Block script/iframe-initiated (non-gesture) top-frame redirects to ad/tracker domains
+            if (request.isForMainFrame && !request.hasGesture() && currentPageUrl.isNotBlank()) {
+                val targetUrl = uri.toString()
+                val currentHost = runCatching { currentPageUrl.toUri().host?.lowercase() }.getOrNull()
+                val targetHost = uri.host?.lowercase()
+                if (!currentHost.isNullOrBlank() && !targetHost.isNullOrBlank() && currentHost != targetHost) {
+                    if (viewModel.checkResourceBlocking(targetUrl, currentPageUrl, "sub_frame")) {
+                        return true
+                    }
+                }
+            }
+            return false
+        }
+
+        if (scheme == "about" || scheme == "javascript") {
             return false
         }
 
@@ -64,7 +78,6 @@ internal class VerveWebViewClient(
                 Intent.parseUri(uri.toString(), Intent.URI_INTENT_SCHEME)
             }.getOrNull() ?: return true
 
-            // Prevent webpages from targeting internal app components or selectors
             parsedIntent.addCategory(Intent.CATEGORY_BROWSABLE)
             parsedIntent.component = null
             parsedIntent.selector = null
@@ -111,7 +124,6 @@ internal class VerveWebViewClient(
     override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
         super.onPageStarted(view, url, favicon)
         if (!url.isNullOrBlank() && url != "about:blank" && !url.startsWith("data:")) {
-            // Ignore the synthetic onPageStarted fired by renderLoadErrorPage's loadDataWithBaseURL
             if (pendingErrorPageUrl != null && url == pendingErrorPageUrl) {
                 pendingErrorPageUrl = null
                 isShowingErrorPage = true
@@ -140,6 +152,7 @@ internal class VerveWebViewClient(
             }
 
             currentPageUrl = url
+            AdBlockWebViewHelper.updateActivePageUrl(tabId, url)
             onNavigatedUrl(url)
             if (viewModel.uiState.value.activeTabId == tabId) {
                 viewModel.setToolbarCollapsed(false)
@@ -188,7 +201,6 @@ internal class VerveWebViewClient(
             } else {
                 lastColorExtractedUrl = normalizedUrl
                 scheduleSnapshotColorExtract(60L)
-                // Silent follow-up pass for pages whose hero images/CSS hydrate shortly after load
                 scheduleSilentSnapshotColorExtract(520L)
             }
         } else {
@@ -210,6 +222,7 @@ internal class VerveWebViewClient(
             val previousFullUrl = WebSnapshotColorExtractor.normalizeUrl(currentPageUrl)
             val newFullUrl = WebSnapshotColorExtractor.normalizeUrl(url)
             currentPageUrl = url
+            AdBlockWebViewHelper.updateActivePageUrl(tabId, url)
             onNavigatedUrl(url)
 
             if (isReload) {
@@ -364,6 +377,7 @@ internal class VerveWebViewClient(
 
         pendingFallbackUrl = candidateUrl
         currentPageUrl = candidateUrl
+        AdBlockWebViewHelper.updateActivePageUrl(tabId, candidateUrl)
         onNavigatedUrl(candidateUrl)
         webView.post {
             webView.loadUrl(candidateUrl)
@@ -439,83 +453,38 @@ internal class VerveWebViewClient(
         view: WebView?,
         request: WebResourceRequest?
     ): WebResourceResponse? {
-        val webResourceRequest = request ?: return super.shouldInterceptRequest(view, request as WebResourceRequest?)
-        val reqUrl = webResourceRequest.url?.toString() ?: return super.shouldInterceptRequest(view, webResourceRequest)
+        val webResourceRequest = request
+            ?: return super.shouldInterceptRequest(view, null as WebResourceRequest?)
+        val reqUrl = webResourceRequest.url?.toString()
+            ?: return super.shouldInterceptRequest(view, webResourceRequest)
 
-        if (!reqUrl.startsWith("http://") && !reqUrl.startsWith("https://")) {
+        if (!reqUrl.startsWith("http://", ignoreCase = true) &&
+            !reqUrl.startsWith("https://", ignoreCase = true)
+        ) {
             return super.shouldInterceptRequest(view, webResourceRequest)
         }
 
         val pageUrl = if (webResourceRequest.isForMainFrame) {
+            currentPageUrl = reqUrl
+            AdBlockWebViewHelper.updateActivePageUrl(tabId, reqUrl)
             reqUrl
         } else {
-            webResourceRequest.requestHeaders?.get("Referer") ?: currentPageUrl
+            AdBlockWebViewHelper.getCachedPageUrl(tabId)
+                .ifBlank { currentPageUrl }
+                .ifBlank {
+                    webResourceRequest.requestHeaders?.entries
+                        ?.firstOrNull { it.key.equals("Referer", ignoreCase = true) }
+                        ?.value
+                        .orEmpty()
+                }
+                .ifBlank { reqUrl }
         }
 
-        val resourceType = determineResourceType(webResourceRequest)
-        val isBlocked = viewModel.checkResourceBlocking(reqUrl, pageUrl, resourceType)
-
-        if (isBlocked) {
-            if (webResourceRequest.isForMainFrame) {
-                viewModel.onPageLoadFinished(tabId)
-                viewModel.onRevealTimeout()
-                val blockedHtml = """
-                    <!DOCTYPE html>
-                    <html>
-                    <head>
-                        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                        <meta name="color-scheme" content="light dark">
-                    </head>
-                    <body style="font-family:system-ui;padding:32px 24px;background:Canvas;color:CanvasText;">
-                        <h3>Page blocked by Verve Shield</h3>
-                        <p style="opacity:0.75;word-break:break-all;">${escapeHtml(reqUrl)}</p>
-                    </body>
-                    </html>
-                """.trimIndent()
-                return WebResourceResponse(
-                    "text/html",
-                    "UTF-8",
-                    200,
-                    "OK",
-                    null,
-                    ByteArrayInputStream(blockedHtml.toByteArray(Charsets.UTF_8))
-                )
-            }
-
-            val (mimeType, bodyBytes) = when (resourceType) {
-                "script" -> "application/javascript" to ByteArray(0)
-                "stylesheet" -> "text/css" to ByteArray(0)
-                "xmlhttprequest" -> "application/json" to "{}".toByteArray(Charsets.UTF_8)
-                else -> "text/plain" to ByteArray(0)
-            }
-
-            return WebResourceResponse(
-                mimeType,
-                "UTF-8",
-                200,
-                "OK",
-                mapOf("Access-Control-Allow-Origin" to "*"),
-                ByteArrayInputStream(bodyBytes)
-            )
-        }
-
-        return super.shouldInterceptRequest(view, webResourceRequest)
-    }
-
-    @Suppress("SpellCheckingInspection")
-    private fun determineResourceType(request: WebResourceRequest): String {
-        if (request.isForMainFrame) return "main_frame"
-
-        val acceptHeader = request.requestHeaders?.get("Accept") ?: ""
-        val path = request.url?.path?.lowercase() ?: ""
-
-        return when {
-            acceptHeader.contains("text/css") || path.endsWith(".css") -> "stylesheet"
-            acceptHeader.contains("image/") || path.matches(Regex(".*\\.(png|jpg|jpeg|gif|webp|svg|ico).*")) -> "image"
-            acceptHeader.contains("javascript") || path.endsWith(".js") -> "script"
-            acceptHeader.contains("font/") || path.matches(Regex(".*\\.(woff|woff2|ttf|otf).*")) -> "font"
-            acceptHeader.contains("application/json") || request.requestHeaders?.containsKey("X-Requested-With") == true -> "xmlhttprequest"
-            else -> "other"
-        }
+        return AdBlockWebViewHelper.interceptNetworkRequest(
+            viewModel = viewModel,
+            request = webResourceRequest,
+            targetUrl = reqUrl,
+            pageUrl = pageUrl
+        ) ?: super.shouldInterceptRequest(view, webResourceRequest)
     }
 }

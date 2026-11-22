@@ -396,6 +396,7 @@ internal fun createTabWebView(
                     settings.saveFormData = false
                 }
                 CookieManager.getInstance().setAcceptThirdPartyCookies(this@apply, !incognito)
+                AdBlockWebViewHelper.updateActivePageUrl(tabId, navigatedUrl)
                 tabWebViewPool.setLastRequestedUrl(tabId, navigatedUrl)
                 viewModel.onPageUrlUpdated(tabId, navigatedUrl)
             },
@@ -408,7 +409,9 @@ internal fun createTabWebView(
                 edgeProbeScheduler.dispose()
                 WebSnapshotColorExtractor.cancel(this@apply)
                 pageColorCache.clear()
+                AdBlockWebViewHelper.clearTab(tabId)
                 runCatching { removeJavascriptInterface("VervePdfBridge") }
+                runCatching { removeJavascriptInterface("__verveAdBlock") }
                 onHideCustomView()
             }
         )

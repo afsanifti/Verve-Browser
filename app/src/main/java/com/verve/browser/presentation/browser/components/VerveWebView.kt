@@ -18,6 +18,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import com.verve.browser.data.download.VerveDownloadManager
 import com.verve.browser.data.network.QuicNetworkManager
 import com.verve.browser.presentation.browser.BrowserViewModel
+import com.verve.browser.presentation.browser.components.webview.AdBlockWebViewHelper
 import com.verve.browser.presentation.browser.components.webview.createTabWebView
 import com.verve.browser.presentation.browser.util.TabThumbnailCache
 import com.verve.browser.presentation.browser.util.TabWebViewPool
@@ -59,6 +60,11 @@ fun VerveWebView(
             }
         },
         update = { hostContainer ->
+            AdBlockWebViewHelper.ensureServiceWorkerInterception(viewModel)
+            if (url.isNotEmpty()) {
+                AdBlockWebViewHelper.updateActivePageUrl(tabId, url)
+            }
+
             val targetWebView = tabWebViewPool.getOrCreateWebView(
                 tabId = tabId,
                 context = hostContainer.context
@@ -81,6 +87,11 @@ fun VerveWebView(
                         setSupportMultipleWindows(true)
                         javaScriptCanOpenWindowsAutomatically = true
                     }
+                    AdBlockWebViewHelper.installCosmeticAndScriptletEngine(
+                        webView = createdWebView,
+                        tabId = tabId,
+                        viewModel = viewModel
+                    )
                     VerveDownloadManager.attachToWebView(
                         context = ctx,
                         webView = createdWebView,

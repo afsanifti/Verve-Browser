@@ -1,15 +1,48 @@
+// ShouldBlockUrlUseCase.kt
 package com.verve.browser.domain.usecase
 
+import com.verve.browser.domain.model.CosmeticResources
 import com.verve.browser.domain.model.UrlCheckResult
 import com.verve.browser.domain.repository.AdBlockRepository
 
 class ShouldBlockUrlUseCase(
     private val repository: AdBlockRepository
 ) {
-    operator fun invoke(targetUrl: String, pageUrl: String, resourceType: String): UrlCheckResult {
+    operator fun invoke(
+        targetUrl: String,
+        pageUrl: String,
+        resourceType: String,
+        method: String = "GET"
+    ): UrlCheckResult {
         if (resourceType.equals("main_frame", ignoreCase = true)) {
             return UrlCheckResult.Allow
         }
-        return repository.shouldBlockUrl(targetUrl, pageUrl, resourceType)
+        if (repository.isSiteWhitelisted(pageUrl)) {
+            return UrlCheckResult.Allow
+        }
+        return repository.shouldBlockUrl(targetUrl, pageUrl, resourceType, method)
     }
+
+    fun getCosmeticResources(pageUrl: String): CosmeticResources {
+        if (repository.isSiteWhitelisted(pageUrl)) {
+            return CosmeticResources()
+        }
+        return repository.getCosmeticResources(pageUrl)
+    }
+
+    fun getHiddenClassIdSelectors(
+        pageUrl: String,
+        classes: List<String>,
+        ids: List<String>,
+        exceptions: List<String>
+    ): List<String> {
+        if (repository.isSiteWhitelisted(pageUrl)) {
+            return emptyList()
+        }
+        return repository.getHiddenClassIdSelectors(classes, ids, exceptions)
+    }
+
+    fun isSiteWhitelisted(pageUrl: String): Boolean = repository.isSiteWhitelisted(pageUrl)
+
+    fun toggleSiteWhitelist(pageUrl: String): Boolean = repository.toggleSiteWhitelist(pageUrl)
 }
