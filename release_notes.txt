@@ -1,8 +1,3 @@
 ✨ What's New
 
-- Inline PDF Viewer: Open PDF links and portal documents directly inside Verve in a dedicated tab with built-in text search, save, share, and open-with options.
-- Reliable Portal Downloads: Improved handling for authenticated form submissions and dynamic downloads so files like admit cards and receipts open cleanly.
-- Seamless PDF Back Navigation: Use the system back gesture or top back button to close an open PDF tab and return straight to your previous webpage.
-- Swipe-to-Close in Tab Grid: Swipe any tab card left or right in Grid View to dismiss it with a smooth slide-and-fade animation.
-- Persistent Tab View Preference: Your chosen Grid or Carousel layout in Quick Tabs is now remembered across sessions until you switch it again.
-- Stability Improvements: Fixed theme and isolated process crashes when loading PDF documents.
+- Stability and improvement on adblocker
