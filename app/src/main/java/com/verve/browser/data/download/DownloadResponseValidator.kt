@@ -9,6 +9,39 @@ internal object DownloadResponseValidator {
 
     private val BINARY_EXTENSIONS = setOf("zip", "rar", "7z", "apk", "xlsx", "xls", "docx", "doc")
 
+    private val NON_ATTACHMENT_API_MIMES = setOf(
+        "application/json",
+        "text/json",
+        "application/ld+json",
+        "application/problem+json",
+        "application/vnd.api+json",
+        "application/javascript",
+        "text/javascript",
+        "application/x-javascript",
+        "application/ecmascript",
+        "application/x-protobuf",
+        "application/protobuf",
+        "application/grpc",
+        "application/grpc-web",
+        "application/wasm",
+        "text/css",
+        "text/vtt"
+    )
+
+    private val TELEMETRY_PATH_SEGMENTS = setOf(
+        "sgasync",
+        "gen_204",
+        "client_204",
+        "generate_204",
+        "log",
+        "beacon",
+        "telemetry",
+        "collect",
+        "events",
+        "heartbeat",
+        "ping"
+    )
+
     fun validateExpectedTypeVsResponseMime(
         expectedFileName: String,
         expectedMimeType: String?,
@@ -147,6 +180,41 @@ internal object DownloadResponseValidator {
                 return true
             }
         }
+        return false
+    }
+
+    fun shouldIgnoreBackgroundDownload(
+        url: String,
+        contentDisposition: String?,
+        mimeType: String?
+    ): Boolean {
+        val disposition = contentDisposition.orEmpty()
+        val hasExplicitAttachment = disposition.contains("attachment", ignoreCase = true) ||
+                Regex("""filename\*?\s*=""", RegexOption.IGNORE_CASE).containsMatchIn(disposition)
+        if (hasExplicitAttachment) return false
+
+        val normalizedMime = mimeType
+            ?.substringBefore(';')
+            ?.trim()
+            ?.lowercase()
+            .orEmpty()
+
+        if (normalizedMime in NON_ATTACHMENT_API_MIMES || normalizedMime.endsWith("+json")) {
+            return true
+        }
+
+        val cleanPath = url.substringBefore('?').substringBefore('#')
+        val lastSegment = cleanPath.substringAfterLast('/', "").lowercase()
+        if (lastSegment in TELEMETRY_PATH_SEGMENTS) {
+            return true
+        }
+
+        val hasExtension = lastSegment.contains('.') &&
+                lastSegment.substringAfterLast('.', "").length in 1..6
+        if (!hasExtension && (normalizedMime == "application/octet-stream" || normalizedMime.isEmpty())) {
+            return true
+        }
+
         return false
     }
 }

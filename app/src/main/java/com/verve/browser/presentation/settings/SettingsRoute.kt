@@ -14,11 +14,13 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import com.verve.browser.domain.model.AdBlockMode
 import com.verve.browser.presentation.downloads.DownloadsRoute
 import com.verve.browser.presentation.update.AppUpdateController
 
 private enum class SettingsDestination {
     MAIN,
+    PRIVACY_SECURITY,
     THEME,
     DOWNLOADS,
     ABOUT_VERVE
@@ -28,6 +30,8 @@ private enum class SettingsDestination {
 fun SettingsFlow(
     updateController: AppUpdateController,
     onExitSettings: () -> Unit,
+    adBlockMode: AdBlockMode = AdBlockMode.STANDARD,
+    onSelectAdBlockMode: (AdBlockMode) -> Unit = {},
     openAboutVerveDirectly: Boolean = false,
     autoStartUpdate: Boolean = false,
     onAutoStartUpdateHandled: () -> Unit = {},
@@ -69,10 +73,19 @@ fun SettingsFlow(
             SettingsDestination.MAIN -> {
                 SettingsScreen(
                     hasUpdateAvailable = updateState.availableUpdate != null,
+                    adBlockMode = adBlockMode,
                     onNavigateBack = onExitSettings,
+                    onOpenPrivacySecurity = { destination = SettingsDestination.PRIVACY_SECURITY },
                     onOpenTheme = { destination = SettingsDestination.THEME },
                     onOpenDownloads = { destination = SettingsDestination.DOWNLOADS },
                     onOpenAboutVerve = { destination = SettingsDestination.ABOUT_VERVE }
+                )
+            }
+            SettingsDestination.PRIVACY_SECURITY -> {
+                PrivacySecuritySettingsScreen(
+                    adBlockMode = adBlockMode,
+                    onSelectAdBlockMode = onSelectAdBlockMode,
+                    onNavigateBack = { destination = SettingsDestination.MAIN }
                 )
             }
             SettingsDestination.THEME -> {

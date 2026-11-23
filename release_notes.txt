@@ -1,3 +1,6 @@
 ✨ What's New
 
-- Stability and improvement on adblocker
+* Stability and improvement on adblocker (including CNAME uncloaking startup fixes)
+* **3-State Verve Shields**: Tap the shield quick toggle to cycle between **Off**, **Standard**, and **Aggressive** modes, while automatically defaulting to your Settings preference on new pages
+* **Smoother Toolbar Animations**: Eliminated layout jitter when collapsing and expanding the bottom toolbar, and centered the search pill on the New Tab screen
+* **Smarter Download Filtering**: Prevented silent background API and telemetry responses (such as `.json` and `sgasync`) from triggering unwanted automatic downloads

@@ -33,12 +33,13 @@ import androidx.compose.ui.platform.ClipEntry
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.unit.dp
+import com.verve.browser.domain.model.AdBlockMode
 import com.verve.browser.presentation.browser.components.searchpill.pageactions.PageActionsBottomControls
 import com.verve.browser.presentation.browser.components.searchpill.pageactions.PageActionsMiddleSections
 import com.verve.browser.presentation.browser.components.searchpill.pageactions.PageActionsTopBar
+import kotlin.time.Duration.Companion.milliseconds
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlin.time.Duration.Companion.milliseconds
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -53,6 +54,7 @@ fun PageActionsBottomSheet(
     isDesktopSite: Boolean,
     isReaderMode: Boolean,
     onDismissRequest: () -> Unit,
+    adBlockMode: AdBlockMode = AdBlockMode.STANDARD,
     isQuicConnection: Boolean = false,
     onCopyLinkClick: () -> Unit = {},
     onRefreshClick: () -> Unit = {},
@@ -65,7 +67,7 @@ fun PageActionsBottomSheet(
     onDownloadsClick: () -> Unit = {},
     onZoomClick: () -> Unit = {},
     onNewTabClick: () -> Unit = {},
-    onShieldToggle: (Boolean) -> Unit = {},
+    onShieldToggle: () -> Unit = {},
     onBookmarkToggle: (Boolean) -> Unit = {},
     onDesktopSiteToggle: (Boolean) -> Unit = {},
     onReaderModeToggle: (Boolean) -> Unit = {}
@@ -197,6 +199,7 @@ fun PageActionsBottomSheet(
 
             PageActionsBottomControls(
                 isShieldEnabled = isShieldEnabled,
+                adBlockMode = adBlockMode,
                 isBookmarked = isBookmarked,
                 isDesktopSite = isDesktopSite,
                 isReaderMode = isReaderMode,
@@ -207,7 +210,7 @@ fun PageActionsBottomSheet(
                 },
                 onShieldToggle = {
                     haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                    onShieldToggle(!isShieldEnabled)
+                    onShieldToggle()
                 },
                 onBookmarkToggle = {
                     haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)

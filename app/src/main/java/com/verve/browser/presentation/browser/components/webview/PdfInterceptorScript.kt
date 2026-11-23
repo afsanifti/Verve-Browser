@@ -7,11 +7,17 @@ internal object PdfInterceptorScript {
             const DOWNLOAD_ACTION_REGEX = /(admitcard|download|export|receipt|invoice|challan|payslip|transcript|certificate|marksheet|voucher|statement|attachment)/i;
             const DOWNLOAD_LABEL_REGEX = /(download|export|save\s+pdf|print\s+pdf|get\s+pdf)/i;
             const FILE_EXT_REGEX = /\.(pdf|zip|rar|7z|csv|xlsx|xls|doc|docx|txt|apk|tar|gz)(\?|#|$)/i;
+            const TELEMETRY_PATH_REGEX = /\/(sgasync|gen_204|client_204|generate_204|log|beacon|telemetry|collect|events|heartbeat|ping)(\/|\?|#|$)/i;
             const SENSITIVE_FIELD_REGEX = /(password|passwd|pwd|pin|otp|cvv|cardnumber|secret)/i;
             const blobUrlToName = window.__verveBlobUrlToName || (window.__verveBlobUrlToName = new Map());
             const nativeFetch = typeof window.fetch === 'function' ? window.fetch.bind(window) : null;
             let lastSubmitter = null;
             let lastSubmitterTime = 0;
+            let lastUserGestureTime = 0;
+
+            const markUserGesture = () => {
+                lastUserGestureTime = Date.now();
+            };
 
             const normalizeDownloadName = (rawName, fallbackExt) => {
                 let cleaned = String(rawName || 'download')
@@ -86,25 +92,53 @@ internal object PdfInterceptorScript {
                 }
             };
 
-            const classifyDownloadResponse = async (contentType, disposition, blob) => {
+            const isTelemetryOrApiUrl = (rawUrl) => {
+                if (!rawUrl) return false;
+                try {
+                    const parsed = new URL(rawUrl, window.location.href);
+                    return TELEMETRY_PATH_REGEX.test(parsed.pathname);
+                } catch (_) {
+                    return TELEMETRY_PATH_REGEX.test(String(rawUrl));
+                }
+            };
+
+            const classifyDownloadResponse = async (contentType, disposition, blob, requestUrl, requireGestureForOctetStream) => {
                 const ct = (contentType || '').toLowerCase();
                 const cd = (disposition || '').toLowerCase();
-                const isAttachment = cd.includes('attachment');
+                const isExplicitAttachment = cd.includes('attachment') || /filename\*?\s*=/i.test(cd);
 
                 if (ct.includes('application/pdf') || ct.includes('application/x-pdf') || cd.includes('.pdf') || await hasPdfMagicBytes(blob)) {
                     return { isDownload: true, isPdf: true };
                 }
-                if (ct.includes('text/html') || ct.includes('application/xhtml+xml')) {
+                if (ct.includes('text/html') ||
+                    ct.includes('application/xhtml+xml') ||
+                    (!isExplicitAttachment && (
+                        ct.includes('json') ||
+                        ct.includes('javascript') ||
+                        ct.includes('ecmascript') ||
+                        ct.includes('protobuf') ||
+                        ct.includes('grpc') ||
+                        ct.includes('wasm')
+                    ))
+                ) {
                     return { isDownload: false, isPdf: false };
                 }
-                if (isAttachment ||
-                    ct.includes('application/octet-stream') ||
+                if (isExplicitAttachment ||
                     ct.includes('application/zip') ||
                     ct.includes('application/vnd.') ||
                     ct.includes('application/msword') ||
                     ct.includes('text/csv')
                 ) {
                     return { isDownload: true, isPdf: false };
+                }
+                if (ct.includes('application/octet-stream')) {
+                    if (isTelemetryOrApiUrl(requestUrl)) {
+                        return { isDownload: false, isPdf: false };
+                    }
+                    const hasRecentGesture = (Date.now() - lastUserGestureTime) < 3000;
+                    if (!requireGestureForOctetStream || hasRecentGesture) {
+                        return { isDownload: true, isPdf: false };
+                    }
                 }
                 return { isDownload: false, isPdf: false };
             };
@@ -214,7 +248,7 @@ internal object PdfInterceptorScript {
                     const disposition = response.headers.get('content-disposition') || '';
                     const resolvedUrl = response.url || actionUrl;
                     const blob = await response.blob();
-                    const classification = await classifyDownloadResponse(contentType, disposition, blob);
+                    const classification = await classifyDownloadResponse(contentType, disposition, blob, resolvedUrl, false);
 
                     if (classification.isDownload && response.ok && blob.size > 0) {
                         const fileName = extractFileName(disposition, resolvedUrl, classification.isPdf ? 'pdf' : null);
@@ -241,6 +275,10 @@ internal object PdfInterceptorScript {
             if (!window.__vervePdfProtoPatched) {
                 window.__vervePdfProtoPatched = true;
 
+                window.addEventListener('pointerdown', markUserGesture, true);
+                window.addEventListener('touchstart', markUserGesture, true);
+                window.addEventListener('keydown', markUserGesture, true);
+
                 const origFormSubmit = HTMLFormElement.prototype.submit;
                 HTMLFormElement.prototype.submit = function() {
                     const submitter = (Date.now() - lastSubmitterTime < 1500) ? lastSubmitter : null;
@@ -259,11 +297,11 @@ internal object PdfInterceptorScript {
                                 if (!response || !response.ok || !window.VervePdfBridge) return;
                                 const contentType = response.headers.get('content-type') || '';
                                 const disposition = response.headers.get('content-disposition') || '';
+                                const reqUrl = typeof input === 'string' ? input : (input && input.url) || response.url;
                                 const cloned = response.clone();
                                 const blob = await cloned.blob();
-                                const classification = await classifyDownloadResponse(contentType, disposition, blob);
+                                const classification = await classifyDownloadResponse(contentType, disposition, blob, reqUrl, true);
                                 if (classification.isDownload && blob.size > 0) {
-                                    const reqUrl = typeof input === 'string' ? input : (input && input.url) || response.url;
                                     const fileName = extractFileName(disposition, reqUrl, classification.isPdf ? 'pdf' : null);
                                     sendBlobToNative(blob, fileName, contentType, reqUrl, classification.isPdf);
                                 }
@@ -285,6 +323,7 @@ internal object PdfInterceptorScript {
                             if (!window.VervePdfBridge || this.status < 200 || this.status >= 300) return;
                             const contentType = this.getResponseHeader('content-type') || '';
                             const disposition = this.getResponseHeader('content-disposition') || '';
+                            const sourceUrl = this.responseURL || this.__verveUrl;
 
                             let blob = null;
                             if (this.response instanceof Blob) {
@@ -299,9 +338,8 @@ internal object PdfInterceptorScript {
                             }
 
                             if (blob && blob.size > 0) {
-                                classifyDownloadResponse(contentType, disposition, blob).then((classification) => {
+                                classifyDownloadResponse(contentType, disposition, blob, sourceUrl, true).then((classification) => {
                                     if (classification.isDownload) {
-                                        const sourceUrl = this.responseURL || this.__verveUrl;
                                         const fileName = extractFileName(disposition, sourceUrl, classification.isPdf ? 'pdf' : null);
                                         sendBlobToNative(blob, fileName, contentType, sourceUrl, classification.isPdf);
                                     }
@@ -353,6 +391,7 @@ internal object PdfInterceptorScript {
                 };
 
                 window.addEventListener('click', (event) => {
+                    markUserGesture();
                     const target = event.target && event.target.closest
                         ? event.target.closest('button, input[type="submit"], input[type="button"], input[type="image"], a, [onclick], [role="button"]')
                         : null;

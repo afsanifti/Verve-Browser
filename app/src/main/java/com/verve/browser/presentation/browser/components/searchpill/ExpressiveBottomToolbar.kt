@@ -7,52 +7,50 @@ import androidx.compose.animation.core.spring
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.drag
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.input.pointer.util.VelocityTracker
+import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.lerp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.util.lerp
 import kotlin.math.abs
 import kotlin.math.exp
+import kotlin.math.roundToInt
 import kotlinx.coroutines.launch
 
 internal val ExpressiveToolbarQuickSpring = spring<Float>(
-    dampingRatio = 0.98f,
-    stiffness = 420f
+    dampingRatio = 0.94f,
+    stiffness = 340f
 )
 
 private val ExpressiveToolbarDpSpring = spring<Dp>(
-    dampingRatio = 1.0f,
-    stiffness = 420f
+    dampingRatio = 0.96f,
+    stiffness = 360f
 )
 
 // Critically damped curve for smooth, zero-bounce horizontal tab-swipe recovery
@@ -116,7 +114,7 @@ fun ExpressiveBottomToolbar(
     val isSingleFullPill = isSearchFocused || isFindInPage
     val verticalSwipeThresholdPx = with(density) { 18.dp.toPx() }
     val horizontalCommitThresholdPx = with(density) { 54.dp.toPx() }
-    val sideSlideOffsetPx = with(density) { 16.dp.toPx() }
+    val sideTuckSlidePx = with(density) { 26.dp.toPx() }
     val horizontalOuterPaddingPx = with(density) { 32.dp.toPx() }
 
     val currentIsWebMode by rememberUpdatedState(isWebMode)
@@ -136,35 +134,28 @@ fun ExpressiveBottomToolbar(
     // +1f = full swipe right (compresses right button / glides pill right)
     val swipeProgress = remember { Animatable(0f) }
 
+    // Master collapse/expand progress: 0f = collapsed, 1f = expanded
     val expandProgress by animateFloatAsState(
         targetValue = if (effectiveCollapsed) 0f else 1f,
         animationSpec = ExpressiveToolbarQuickSpring,
         label = "toolbarExpandProgress"
     )
 
-    val leftButtonProgress by animateFloatAsState(
-        targetValue = if (isWebMode && !effectiveCollapsed && !isSingleFullPill) 1f else 0f,
+    val webModeFactor by animateFloatAsState(
+        targetValue = if (isWebMode) 1f else 0f,
         animationSpec = ExpressiveToolbarQuickSpring,
-        label = "leftButtonProgress"
+        label = "toolbarWebModeFactor"
     )
 
-    val rightButtonProgress by animateFloatAsState(
-        targetValue = if (!effectiveCollapsed && !isSingleFullPill) 1f else 0f,
+    val singlePillFactor by animateFloatAsState(
+        targetValue = if (isSingleFullPill) 1f else 0f,
         animationSpec = ExpressiveToolbarQuickSpring,
-        label = "rightButtonProgress"
+        label = "toolbarSinglePillFactor"
     )
 
-    val topPadding by animateDpAsState(
-        targetValue = if (effectiveCollapsed) 4.dp else 10.dp,
-        animationSpec = ExpressiveToolbarDpSpring,
-        label = "toolbarTopPadding"
-    )
-
-    val bottomPadding by animateDpAsState(
-        targetValue = if (effectiveCollapsed) 2.dp else 10.dp,
-        animationSpec = ExpressiveToolbarDpSpring,
-        label = "toolbarBottomPadding"
-    )
+    val clampedExpand = expandProgress.coerceIn(0f, 1f)
+    val topPadding = lerp(4.dp, 10.dp, clampedExpand)
+    val bottomPadding = lerp(2.dp, 10.dp, clampedExpand)
 
     val displayDomain = remember(currentUrl) { extractDisplayDomain(currentUrl) }
     val targetCollapsedPillWidth = remember(displayDomain, density) {
@@ -186,103 +177,80 @@ fun ExpressiveBottomToolbar(
         label = "collapsedPillWidth"
     )
 
-    BoxWithConstraints(
-        modifier = modifier
-            .fillMaxWidth()
-            .windowInsetsPadding(bottomWindowInsets)
-            .padding(
-                start = 16.dp,
-                end = 16.dp,
-                top = topPadding,
-                bottom = bottomPadding
-            )
-            .pointerInput(Unit) {
-                val touchSlop = viewConfiguration.touchSlop
-                awaitEachGesture {
-                    val down = awaitFirstDown(requireUnconsumed = false)
-                    if (currentIsSingleFullPill) return@awaitEachGesture
+    val collapsedFactor = 1f - clampedExpand
+    val activeSideFactor = (1f - singlePillFactor.coerceIn(0f, 1f))
+    val leftVisibility = (clampedExpand * webModeFactor.coerceIn(0f, 1f) * activeSideFactor).coerceIn(0f, 1f)
+    val rightVisibility = (clampedExpand * activeSideFactor).coerceIn(0f, 1f)
+    // Used only to keep the pill width identical between New Tab and Browsing mode
+    val pillWidthLeftReserveFactor = maxOf(leftVisibility, rightVisibility)
 
-                    val velocityTracker = VelocityTracker()
-                    velocityTracker.addPosition(down.uptimeMillis, down.position)
+    val currentSwipe = swipeProgress.value
+    val leftCompressDp = SideButtonMaxCompressDp * (-currentSwipe).coerceIn(0f, 1f) * leftVisibility
+    val rightCompressDp = SideButtonMaxCompressDp * currentSwipe.coerceIn(0f, 1f) * rightVisibility
 
-                    var totalDx = 0f
-                    var totalDy = 0f
-                    var verticalDragDelta = 0f
-                    var lockedAxis = 0 // 0 = undecided, 1 = horizontal, 2 = vertical
-                    var crossedCommitHaptic = false
-                    var lastRawFraction = 0f
+    val leftButtonWidth = (SideButtonSize - leftCompressDp).coerceAtLeast(SideButtonMinCompressedWidth)
+    val rightButtonWidth = (SideButtonSize - rightCompressDp).coerceAtLeast(SideButtonMinCompressedWidth)
 
-                    val completed = drag(down.id) { change ->
-                        val delta = change.positionChange()
-                        velocityTracker.addPosition(change.uptimeMillis, change.position)
-                        totalDx += delta.x
-                        totalDy += delta.y
+    val collapsedPillTranslationPx = with(density) {
+        (28.dp * currentSwipe * collapsedFactor).toPx()
+    }
+    val noLeftButtonEdgeNudgePx = if (leftVisibility < 0.05f && currentSwipe < 0f) {
+        with(density) { (12.dp * currentSwipe * clampedExpand).toPx() }
+    } else {
+        0f
+    }
+    val collapsedInnerParallaxPx = with(density) {
+        (8.dp * currentSwipe * collapsedFactor).toPx()
+    }
+    val contentShiftPx = with(density) {
+        ((rightCompressDp - leftCompressDp) * 0.45f).toPx()
+    } + noLeftButtonEdgeNudgePx + collapsedInnerParallaxPx
 
-                        if (lockedAxis == 0) {
-                            if (abs(totalDx) > touchSlop || abs(totalDy) > touchSlop) {
-                                if (abs(totalDx) > abs(totalDy) * 1.15f) {
-                                    lockedAxis = 1
-                                    coroutineScope.launch { swipeProgress.stop() }
-                                    currentOnSwipeStarted()
-                                } else if (currentIsWebMode) {
-                                    lockedAxis = 2
-                                }
-                            }
-                        }
+    val gestureModifier = Modifier
+        .fillMaxWidth()
+        .windowInsetsPadding(bottomWindowInsets)
+        .padding(
+            start = 16.dp,
+            end = 16.dp,
+            top = topPadding,
+            bottom = bottomPadding
+        )
+        .pointerInput(Unit) {
+            val touchSlop = viewConfiguration.touchSlop
+            awaitEachGesture {
+                val down = awaitFirstDown(requireUnconsumed = false)
+                if (currentIsSingleFullPill) return@awaitEachGesture
 
-                        if (lockedAxis == 1) {
-                            change.consume()
-                            val isSwipingRight = totalDx > 0f
-                            val hasTargetTab = if (isSwipingRight) {
-                                currentCanSwipeLeftTab
-                            } else {
-                                currentCanSwipeRightTab
-                            }
+                val velocityTracker = VelocityTracker()
+                velocityTracker.addPosition(down.uptimeMillis, down.position)
 
-                            // 1:1 viewport fraction for the Chrome-style page carousel
-                            val viewportWidthPx = (size.width.toFloat() + horizontalOuterPaddingPx)
-                                .coerceAtLeast(1f)
-                            val edgeResistance = if (hasTargetTab) 1f else 0.16f
-                            lastRawFraction = ((totalDx / viewportWidthPx) * edgeResistance)
-                                .coerceIn(-1f, 1f)
-                            currentOnSwipeFractionChanged(lastRawFraction)
+                var totalDx = 0f
+                var totalDy = 0f
+                var verticalDragDelta = 0f
+                var lockedAxis = 0 // 0 = undecided, 1 = horizontal, 2 = vertical
+                var crossedCommitHaptic = false
+                var lastRawFraction = 0f
 
-                            // Smooth asymptotic curve for side button compression
-                            val normalized = (abs(totalDx) / (horizontalCommitThresholdPx * 1.35f))
-                                .coerceAtLeast(0f)
-                            val easedMagnitude = 1f - exp(-1.45f * normalized)
-                            val pillResistance = if (hasTargetTab) 1f else 0.32f
-                            val targetProgress = (if (isSwipingRight) 1f else -1f) *
-                                    easedMagnitude * pillResistance
+                val completed = drag(down.id) { change ->
+                    val delta = change.positionChange()
+                    velocityTracker.addPosition(change.uptimeMillis, change.position)
+                    totalDx += delta.x
+                    totalDy += delta.y
 
-                            if (hasTargetTab) {
-                                val isPastCommit = abs(totalDx) >= horizontalCommitThresholdPx
-                                if (isPastCommit && !crossedCommitHaptic) {
-                                    crossedCommitHaptic = true
-                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                } else if (!isPastCommit && crossedCommitHaptic) {
-                                    crossedCommitHaptic = false
-                                }
-                            }
-
-                            coroutineScope.launch {
-                                swipeProgress.snapTo(targetProgress)
-                            }
-                        } else if (lockedAxis == 2 && currentIsWebMode) {
-                            change.consume()
-                            verticalDragDelta += delta.y
-                            if (!currentEffectiveCollapsed && verticalDragDelta > verticalSwipeThresholdPx) {
-                                currentOnCollapsedChange(true)
-                                verticalDragDelta = 0f
-                            } else if (currentEffectiveCollapsed && verticalDragDelta < -verticalSwipeThresholdPx) {
-                                currentOnCollapsedChange(false)
-                                verticalDragDelta = 0f
+                    if (lockedAxis == 0) {
+                        if (abs(totalDx) > touchSlop || abs(totalDy) > touchSlop) {
+                            if (abs(totalDx) > abs(totalDy) * 1.15f) {
+                                lockedAxis = 1
+                                coroutineScope.launch { swipeProgress.stop() }
+                                currentOnSwipeStarted()
+                            } else if (currentIsWebMode) {
+                                lockedAxis = 2
                             }
                         }
                     }
 
                     if (lockedAxis == 1) {
-                        val velocityX = velocityTracker.calculateVelocity().x
+                        change.consume()
                         val isSwipingRight = totalDx > 0f
                         val hasTargetTab = if (isSwipingRight) {
                             currentCanSwipeLeftTab
@@ -290,116 +258,103 @@ fun ExpressiveBottomToolbar(
                             currentCanSwipeRightTab
                         }
 
-                        val isFastFling = if (isSwipingRight) {
-                            velocityX > 650f && totalDx > touchSlop
-                        } else {
-                            velocityX < -650f && totalDx < -touchSlop
-                        }
+                        val viewportWidthPx = (size.width.toFloat() + horizontalOuterPaddingPx)
+                            .coerceAtLeast(1f)
+                        val edgeResistance = if (hasTargetTab) 1f else 0.16f
+                        lastRawFraction = ((totalDx / viewportWidthPx) * edgeResistance)
+                            .coerceIn(-1f, 1f)
+                        currentOnSwipeFractionChanged(lastRawFraction)
 
-                        val shouldCommit = completed && hasTargetTab &&
-                                (abs(totalDx) >= horizontalCommitThresholdPx || isFastFling)
+                        val normalized = (abs(totalDx) / (horizontalCommitThresholdPx * 1.35f))
+                            .coerceAtLeast(0f)
+                        val easedMagnitude = 1f - exp(-1.45f * normalized)
+                        val pillResistance = if (hasTargetTab) 1f else 0.32f
+                        val targetProgress = (if (isSwipingRight) 1f else -1f) *
+                                easedMagnitude * pillResistance
 
-                        if (shouldCommit) {
-                            if (!crossedCommitHaptic) {
+                        if (hasTargetTab) {
+                            val isPastCommit = abs(totalDx) >= horizontalCommitThresholdPx
+                            if (isPastCommit && !crossedCommitHaptic) {
+                                crossedCommitHaptic = true
                                 haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            } else if (!isPastCommit && crossedCommitHaptic) {
+                                crossedCommitHaptic = false
                             }
-                            val direction = if (isSwipingRight) 1 else -1
-                            currentOnSwipeCommitted(direction, lastRawFraction)
-                            if (isSwipingRight) {
-                                currentOnSwipeToLeftTab()
-                            } else {
-                                currentOnSwipeToRightTab()
-                            }
-                        } else {
-                            currentOnSwipeCancelled()
                         }
 
                         coroutineScope.launch {
-                            swipeProgress.animateTo(
-                                targetValue = 0f,
-                                animationSpec = ExpressiveSwipeSpatialSpring
-                            )
+                            swipeProgress.snapTo(targetProgress)
+                        }
+                    } else if (lockedAxis == 2 && currentIsWebMode) {
+                        change.consume()
+                        verticalDragDelta += delta.y
+                        if (!currentEffectiveCollapsed && verticalDragDelta > verticalSwipeThresholdPx) {
+                            currentOnCollapsedChange(true)
+                            verticalDragDelta = 0f
+                        } else if (currentEffectiveCollapsed && verticalDragDelta < -verticalSwipeThresholdPx) {
+                            currentOnCollapsedChange(false)
+                            verticalDragDelta = 0f
                         }
                     }
                 }
-            }
-    ) {
-        val clampedExpand = expandProgress.coerceIn(0f, 1f)
-        val collapsedFactor = 1f - clampedExpand
-        val clampedLeft = leftButtonProgress.coerceAtLeast(0f)
-        val clampedRight = rightButtonProgress.coerceAtLeast(0f)
-        val currentSwipe = swipeProgress.value
 
-        val leftCompressDp = SideButtonMaxCompressDp * (-currentSwipe).coerceIn(0f, 1f) * clampedLeft
-        val rightCompressDp = SideButtonMaxCompressDp * currentSwipe.coerceIn(0f, 1f) * clampedRight
+                if (lockedAxis == 1) {
+                    val velocityX = velocityTracker.calculateVelocity().x
+                    val isSwipingRight = totalDx > 0f
+                    val hasTargetTab = if (isSwipingRight) {
+                        currentCanSwipeLeftTab
+                    } else {
+                        currentCanSwipeRightTab
+                    }
 
-        val leftButtonWidth = (SideButtonSize - leftCompressDp).coerceAtLeast(SideButtonMinCompressedWidth)
-        val rightButtonWidth = (SideButtonSize - rightCompressDp).coerceAtLeast(SideButtonMinCompressedWidth)
+                    val isFastFling = if (isSwipingRight) {
+                        velocityX > 650f && totalDx > touchSlop
+                    } else {
+                        velocityX < -650f && totalDx < -touchSlop
+                    }
 
-        val leftSlotWidth = (SideSlotFullWidth - leftCompressDp) * clampedLeft
-        val rightSlotWidth = (SideSlotFullWidth - rightCompressDp) * clampedRight
+                    val shouldCommit = completed && hasTargetTab &&
+                            (abs(totalDx) >= horizontalCommitThresholdPx || isFastFling)
 
-        // Keep home screen pill width identical to expanded browsing pill width,
-        // while still expanding smoothly to maxWidth when focused for search/find.
-        val effectiveLeftReserve = maxOf(
-            leftSlotWidth,
-            (SideSlotFullWidth - leftCompressDp) * clampedRight
-        )
+                    if (shouldCommit) {
+                        if (!crossedCommitHaptic) {
+                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        }
+                        val direction = if (isSwipingRight) 1 else -1
+                        currentOnSwipeCommitted(direction, lastRawFraction)
+                        if (isSwipingRight) {
+                            currentOnSwipeToLeftTab()
+                        } else {
+                            currentOnSwipeToRightTab()
+                        }
+                    } else {
+                        currentOnSwipeCancelled()
+                    }
 
-        val targetExpandedPillWidth = (maxWidth - effectiveLeftReserve - rightSlotWidth)
-            .coerceAtLeast(collapsedPillWidth)
-        val currentPillWidth = androidx.compose.ui.unit.lerp(
-            start = collapsedPillWidth,
-            stop = targetExpandedPillWidth,
-            fraction = expandProgress.coerceIn(0f, 1f)
-        )
-
-        val collapsedPillTranslationPx = with(density) {
-            (28.dp * currentSwipe * collapsedFactor).toPx()
-        }
-
-        val noLeftButtonEdgeNudgePx = if (clampedLeft < 0.05f && currentSwipe < 0f) {
-            with(density) { (12.dp * currentSwipe * clampedExpand).toPx() }
-        } else {
-            0f
-        }
-        val collapsedInnerParallaxPx = with(density) {
-            (8.dp * currentSwipe * collapsedFactor).toPx()
-        }
-        val contentShiftPx = with(density) {
-            ((rightCompressDp - leftCompressDp) * 0.45f).toPx()
-        } + noLeftButtonEdgeNudgePx + collapsedInnerParallaxPx
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.Center,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            if (leftSlotWidth > 0.5.dp) {
-                val leftAlpha = leftButtonProgress.coerceIn(0f, 1f)
-                val leftScale = 0.72f + 0.28f * leftButtonProgress
-                Box(
-                    modifier = Modifier
-                        .width(leftSlotWidth)
-                        .padding(vertical = 10.dp)
-                        .graphicsLayer {
-                            alpha = leftAlpha
-                            scaleX = leftScale
-                            scaleY = leftScale
-                            translationX = sideSlideOffsetPx * (1f - leftButtonProgress)
-                        },
-                    contentAlignment = Alignment.CenterStart
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        ExpressiveLeftActionButton(
-                            onClick = onLeftActionClick,
-                            buttonWidth = leftButtonWidth
+                    coroutineScope.launch {
+                        swipeProgress.animateTo(
+                            targetValue = 0f,
+                            animationSpec = ExpressiveSwipeSpatialSpring
                         )
-                        Spacer(modifier = Modifier.width(SideButtonGap))
                     }
                 }
             }
+        }
 
+    Layout(
+        modifier = modifier.then(gestureModifier),
+        content = {
+            // Child 0: Left Action Button (keeps full 56.dp geometry during collapse/expand)
+            Box {
+                if (leftVisibility > 0.01f) {
+                    ExpressiveLeftActionButton(
+                        onClick = onLeftActionClick,
+                        buttonWidth = leftButtonWidth
+                    )
+                }
+            }
+
+            // Child 1: Center Search / URL Pill
             ExpressiveSearchPill(
                 inputText = inputText,
                 onInputTextChange = onInputTextChange,
@@ -414,7 +369,7 @@ fun ExpressiveBottomToolbar(
                 findQuery = findQuery,
                 findActiveMatchOrdinal = findActiveMatchOrdinal,
                 findTotalMatches = findTotalMatches,
-                expandProgress = expandProgress,
+                expandProgress = clampedExpand,
                 swipeContentShiftPx = contentShiftPx,
                 onThemeAnimationCompleted = onThemeAnimationCompleted,
                 onFocusChanged = onSearchFocusChanged,
@@ -426,37 +381,96 @@ fun ExpressiveBottomToolbar(
                 onFindQueryChange = onFindQueryChange,
                 onFindPrevious = onFindPrevious,
                 onFindNext = onFindNext,
-                onCloseFindInPage = onCloseFindInPage,
-                modifier = Modifier
-                    .width(currentPillWidth)
-                    .graphicsLayer {
-                        translationX = collapsedPillTranslationPx
-                    }
+                onCloseFindInPage = onCloseFindInPage
             )
 
-            if (rightSlotWidth > 0.5.dp) {
-                val rightAlpha = rightButtonProgress.coerceIn(0f, 1f)
-                val rightScale = 0.72f + 0.28f * rightButtonProgress
-                Box(
-                    modifier = Modifier
-                        .width(rightSlotWidth)
-                        .padding(vertical = 10.dp)
-                        .graphicsLayer {
-                            alpha = rightAlpha
-                            scaleX = rightScale
-                            scaleY = rightScale
-                            translationX = -sideSlideOffsetPx * (1f - rightButtonProgress)
-                        },
-                    contentAlignment = Alignment.CenterEnd
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Spacer(modifier = Modifier.width(SideButtonGap))
-                        ExpressiveTabButton(
-                            onClick = onTabSwitcherClick,
-                            buttonWidth = rightButtonWidth
-                        )
-                    }
+            // Child 2: Right Tab Switcher Button (keeps full 56.dp geometry during collapse/expand)
+            Box {
+                if (rightVisibility > 0.01f) {
+                    ExpressiveTabButton(
+                        onClick = onTabSwitcherClick,
+                        buttonWidth = rightButtonWidth
+                    )
                 }
+            }
+        }
+    ) { measurables, constraints ->
+        val maxWidthPx = constraints.maxWidth
+        val sideGapPx = SideButtonGap.roundToPx()
+        val sideSlotFullPx = SideSlotFullWidth.roundToPx()
+        val leftCompressPx = leftCompressDp.roundToPx()
+        val rightCompressPx = rightCompressDp.roundToPx()
+
+        val widthReserveLeftPx = ((sideSlotFullPx - leftCompressPx) * pillWidthLeftReserveFactor).roundToInt()
+        val leftSlotPx = ((sideSlotFullPx - leftCompressPx) * leftVisibility).roundToInt()
+        val rightSlotPx = ((sideSlotFullPx - rightCompressPx) * rightVisibility).roundToInt()
+
+        val collapsedPillWidthPx = collapsedPillWidth.roundToPx().coerceAtMost(maxWidthPx)
+        val expandedPillWidthPx = (maxWidthPx - widthReserveLeftPx - rightSlotPx)
+            .coerceAtLeast(collapsedPillWidthPx)
+        val pillWidthPx = lerp(collapsedPillWidthPx, expandedPillWidthPx, clampedExpand)
+
+        val looseConstraints = constraints.copy(minWidth = 0, minHeight = 0)
+        val leftPlaceable = measurables[0].measure(looseConstraints)
+        val pillPlaceable = measurables[1].measure(
+            Constraints.fixedWidth(pillWidthPx).copy(minHeight = 0, maxHeight = constraints.maxHeight)
+        )
+        val rightPlaceable = measurables[2].measure(looseConstraints)
+
+        val sideHeightPx = maxOf(leftPlaceable.height, rightPlaceable.height)
+        val expandedRowHeightPx = maxOf(pillPlaceable.height, sideHeightPx)
+        val layoutHeightPx = lerp(
+            pillPlaceable.height,
+            expandedRowHeightPx,
+            maxOf(leftVisibility, rightVisibility)
+        )
+
+        val totalContentPx = leftSlotPx + pillWidthPx + rightSlotPx
+        val startX = (maxWidthPx - totalContentPx) / 2
+        val pillX = startX + leftSlotPx
+        val pillY = (layoutHeightPx - pillPlaceable.height) / 2
+
+        layout(width = maxWidthPx, height = layoutHeightPx) {
+            if (leftVisibility > 0.01f && leftPlaceable.width > 0) {
+                val leftAlpha = ((leftVisibility - 0.14f) / 0.86f).coerceIn(0f, 1f)
+                val leftScale = 0.76f + 0.24f * leftVisibility
+                val leftX = pillX - sideGapPx - leftPlaceable.width
+                val leftY = (layoutHeightPx - leftPlaceable.height) / 2
+                leftPlaceable.placeWithLayer(
+                    x = leftX,
+                    y = leftY,
+                    zIndex = 0f
+                ) {
+                    alpha = leftAlpha
+                    scaleX = leftScale
+                    scaleY = leftScale
+                    translationX = sideTuckSlidePx * (1f - leftVisibility)
+                }
+            }
+
+            if (rightVisibility > 0.01f && rightPlaceable.width > 0) {
+                val rightAlpha = ((rightVisibility - 0.14f) / 0.86f).coerceIn(0f, 1f)
+                val rightScale = 0.76f + 0.24f * rightVisibility
+                val rightX = pillX + pillWidthPx + sideGapPx
+                val rightY = (layoutHeightPx - rightPlaceable.height) / 2
+                rightPlaceable.placeWithLayer(
+                    x = rightX,
+                    y = rightY,
+                    zIndex = 0f
+                ) {
+                    alpha = rightAlpha
+                    scaleX = rightScale
+                    scaleY = rightScale
+                    translationX = -sideTuckSlidePx * (1f - rightVisibility)
+                }
+            }
+
+            pillPlaceable.placeWithLayer(
+                x = pillX,
+                y = pillY,
+                zIndex = 1f
+            ) {
+                translationX = collapsedPillTranslationPx
             }
         }
     }

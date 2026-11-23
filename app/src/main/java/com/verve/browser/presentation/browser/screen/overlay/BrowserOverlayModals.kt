@@ -8,7 +8,14 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import com.verve.browser.domain.model.AdBlockMode
 import com.verve.browser.presentation.browser.BrowserUiState
 import com.verve.browser.presentation.browser.BrowserViewModel
 import com.verve.browser.presentation.browser.components.searchpill.PageActionsBottomSheet
@@ -31,6 +38,79 @@ internal fun BrowserOverlayModals(
     onDownloadsClick: () -> Unit,
     onZoomClick: () -> Unit
 ) {
+    val adBlockMode by viewModel.adBlockMode.collectAsState()
+
+    // Tracks the global mode chosen in Settings so temporary per-page icon taps don't overwrite it
+    var settingsDefaultMode by remember { mutableStateOf(adBlockMode) }
+    var isQuickCyclingMode by remember { mutableStateOf(false) }
+
+    LaunchedEffect(adBlockMode) {
+        if (isQuickCyclingMode) {
+            isQuickCyclingMode = false
+        } else {
+            settingsDefaultMode = adBlockMode
+        }
+    }
+
+    // Automatically restore the Settings adblock level when navigating to a new webpage
+    LaunchedEffect(uiState.currentUrl) {
+        if (uiState.currentUrl.isNotBlank() && adBlockMode != settingsDefaultMode) {
+            isQuickCyclingMode = true
+            viewModel.setAdBlockMode(settingsDefaultMode)
+        }
+    }
+
+    // Binary On/Off toggle used by the Switch inside SiteControlsBottomSheet
+    val toggleCurrentSiteShield: () -> Unit = {
+        val url = uiState.currentUrl
+        if (url.isNotBlank()) {
+            val nowWhitelisted = viewModel.toggleSiteWhitelist(url)
+            overlayState.isShieldEnabled = !nowWhitelisted
+            webViewRef?.reload()
+        } else {
+            overlayState.isShieldEnabled = !overlayState.isShieldEnabled
+        }
+    }
+
+    // 3-state cycle: Off (outline) -> Standard (filled) -> Aggressive (encrypt) -> Off (outline)
+    val cycleCurrentSiteShield: () -> Unit = {
+        val url = uiState.currentUrl
+        when {
+            // 1. Off (Outline) -> Standard (Filled)
+            !overlayState.isShieldEnabled -> {
+                if (adBlockMode != AdBlockMode.STANDARD) {
+                    isQuickCyclingMode = true
+                    viewModel.setAdBlockMode(AdBlockMode.STANDARD)
+                }
+                if (url.isNotBlank()) {
+                    val nowWhitelisted = viewModel.toggleSiteWhitelist(url)
+                    overlayState.isShieldEnabled = !nowWhitelisted
+                    webViewRef?.reload()
+                } else {
+                    overlayState.isShieldEnabled = true
+                }
+            }
+            // 2. Standard (Filled) -> Aggressive (Encrypt, stays on)
+            adBlockMode == AdBlockMode.STANDARD -> {
+                isQuickCyclingMode = true
+                viewModel.setAdBlockMode(AdBlockMode.AGGRESSIVE)
+                if (url.isNotBlank()) {
+                    webViewRef?.reload()
+                }
+            }
+            // 3. Aggressive (Encrypt) -> Off (Outline)
+            else -> {
+                if (url.isNotBlank()) {
+                    val nowWhitelisted = viewModel.toggleSiteWhitelist(url)
+                    overlayState.isShieldEnabled = !nowWhitelisted
+                    webViewRef?.reload()
+                } else {
+                    overlayState.isShieldEnabled = false
+                }
+            }
+        }
+    }
+
     if (overlayState.isPageActionsSheetOpen) {
         PageActionsBottomSheet(
             currentUrl = uiState.currentUrl,
@@ -39,6 +119,7 @@ internal fun BrowserOverlayModals(
             isTranslated = overlayState.isTranslated,
             translateLanguage = overlayState.translateLanguage,
             isShieldEnabled = overlayState.isShieldEnabled,
+            adBlockMode = adBlockMode,
             isBookmarked = overlayState.isBookmarked,
             isDesktopSite = overlayState.isDesktopSite,
             isReaderMode = overlayState.isReaderMode,
@@ -88,9 +169,7 @@ internal fun BrowserOverlayModals(
                 }
                 viewModel.createNewTab(isIncognito = uiState.isIncognito)
             },
-            onShieldToggle = { enabled ->
-                overlayState.isShieldEnabled = enabled
-            },
+            onShieldToggle = cycleCurrentSiteShield,
             onBookmarkToggle = { bookmarked ->
                 overlayState.isBookmarked = bookmarked
             },
@@ -114,6 +193,10 @@ internal fun BrowserOverlayModals(
             currentUrl = uiState.currentUrl,
             webView = webViewRef,
             isQuicConnection = overlayState.isQuicEnabled && overlayState.isQuicConnection,
+            blockedAdsCount = uiState.blockedAdsCount,
+            isShieldEnabled = overlayState.isShieldEnabled,
+            adBlockMode = adBlockMode,
+            onToggleShield = toggleCurrentSiteShield,
             onDismissRequest = { overlayState.isSiteControlsSheetOpen = false }
         )
     }

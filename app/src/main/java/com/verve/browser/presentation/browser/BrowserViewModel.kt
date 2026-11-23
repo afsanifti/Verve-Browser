@@ -59,7 +59,8 @@ class BrowserViewModel(
                     siteSeedColor = activeTab.siteSeedColor,
                     pendingSiteSeedColor = activeTab.siteSeedColor,
                     topRegionColor = activeTab.topRegionColor,
-                    bottomRegionColor = activeTab.bottomRegionColor
+                    bottomRegionColor = activeTab.bottomRegionColor,
+                    blockedAdsCount = activeTab.blockedAdsCount
                 )
             }
         }
@@ -357,17 +358,41 @@ class BrowserViewModel(
         targetUrl: String,
         pageUrl: String,
         resourceType: String,
-        method: String = "GET"
+        method: String = "GET",
+        tabId: String = _uiState.value.activeTabId
     ): UrlCheckResult {
         val result = shouldBlockUrlUseCase(targetUrl, pageUrl, resourceType, method)
         if (result is UrlCheckResult.Block || result is UrlCheckResult.Redirect) {
-            _uiState.update { it.copy(blockedAdsCount = it.blockedAdsCount + 1) }
+            _uiState.update { state ->
+                val resolvedTabId = tabId.ifBlank { state.activeTabId }
+                val updatedTabs = state.tabs.map { tab ->
+                    if (tab.id == resolvedTabId) {
+                        tab.copy(blockedAdsCount = tab.blockedAdsCount + 1)
+                    } else {
+                        tab
+                    }
+                }
+                val activeCount = if (resolvedTabId == state.activeTabId) {
+                    state.blockedAdsCount + 1
+                } else {
+                    state.blockedAdsCount
+                }
+                state.copy(
+                    tabs = updatedTabs,
+                    blockedAdsCount = activeCount
+                )
+            }
         }
         return result
     }
 
-    fun checkResourceBlocking(targetUrl: String, pageUrl: String, resourceType: String): Boolean {
-        return when (evaluateResourceRequest(targetUrl, pageUrl, resourceType)) {
+    fun checkResourceBlocking(
+        targetUrl: String,
+        pageUrl: String,
+        resourceType: String,
+        tabId: String = _uiState.value.activeTabId
+    ): Boolean {
+        return when (evaluateResourceRequest(targetUrl, pageUrl, resourceType, tabId = tabId)) {
             is UrlCheckResult.Block, is UrlCheckResult.Redirect -> true
             UrlCheckResult.Allow, is UrlCheckResult.RewriteUrl -> false
         }
@@ -393,4 +418,11 @@ class BrowserViewModel(
 
     fun toggleSiteWhitelist(pageUrl: String): Boolean =
         shouldBlockUrlUseCase.toggleSiteWhitelist(pageUrl)
+
+    val adBlockMode: StateFlow<com.verve.browser.domain.model.AdBlockMode>
+        get() = shouldBlockUrlUseCase.adBlockMode
+
+    fun setAdBlockMode(mode: com.verve.browser.domain.model.AdBlockMode) {
+        shouldBlockUrlUseCase.setAdBlockMode(mode)
+    }
 }

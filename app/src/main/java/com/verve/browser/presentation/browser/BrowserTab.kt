@@ -14,6 +14,7 @@ data class BrowserTab(
     val isMainFrameLoading: Boolean = false,
     val isLoading: Boolean = false,
     val loadingProgress: Int = 0,
+    val blockedAdsCount: Int = 0,
     val canGoBack: Boolean = false,
     val canGoForward: Boolean = false,
     val lastAccessedAt: Long = System.currentTimeMillis(),

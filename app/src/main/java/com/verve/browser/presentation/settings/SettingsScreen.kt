@@ -42,11 +42,15 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.verve.browser.data.network.QuicNetworkManager
 import com.verve.browser.presentation.browser.util.DefaultBrowserHelper
 import com.verve.browser.presentation.theme.rememberThemeConfig
+import com.verve.browser.domain.model.AdBlockMode
+
 
 @Composable
 fun SettingsScreen(
     hasUpdateAvailable: Boolean,
+    adBlockMode: AdBlockMode,
     onNavigateBack: () -> Unit,
+    onOpenPrivacySecurity: () -> Unit,
     onOpenTheme: () -> Unit,
     onOpenDownloads: () -> Unit,
     onOpenAboutVerve: () -> Unit,
@@ -146,9 +150,19 @@ fun SettingsScreen(
             Spacer(modifier = Modifier.height(22.dp))
 
             // Browser Section
+            // Browser Section
             SettingsSectionLabel(text = "Browser")
             ExpressiveSegmentedGroup(
                 items = listOf(
+                    ExpressiveMenuItem(
+                        title = "Privacy & Security",
+                        subtitle = if (adBlockMode == AdBlockMode.AGGRESSIVE) {
+                            "Block trackers and ads • Aggressive"
+                        } else {
+                            "Block trackers and ads • Standard"
+                        },
+                        onClick = onOpenPrivacySecurity
+                    ),
                     ExpressiveMenuItem(
                         title = "Search Engine",
                         subtitle = "Google"

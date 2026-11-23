@@ -15,6 +15,7 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.core.net.toUri
 import androidx.core.text.htmlEncode
+import com.verve.browser.domain.model.UrlCheckResult
 import com.verve.browser.presentation.browser.BrowserViewModel
 import com.verve.browser.presentation.browser.util.TabPageColorCache
 import com.verve.browser.presentation.browser.util.TabWebViewPool
@@ -49,14 +50,34 @@ internal class VerveWebViewClient(
         val scheme = uri.scheme?.lowercase().orEmpty()
 
         if (scheme == "http" || scheme == "https") {
-            // Block script/iframe-initiated (non-gesture) top-frame redirects to ad/tracker domains
-            if (request.isForMainFrame && !request.hasGesture() && currentPageUrl.isNotBlank()) {
+            if (request.isForMainFrame) {
                 val targetUrl = uri.toString()
-                val currentHost = runCatching { currentPageUrl.toUri().host?.lowercase() }.getOrNull()
-                val targetHost = uri.host?.lowercase()
-                if (!currentHost.isNullOrBlank() && !targetHost.isNullOrBlank() && currentHost != targetHost) {
-                    if (viewModel.checkResourceBlocking(targetUrl, currentPageUrl, "sub_frame")) {
-                        return true
+                val sourceUrl = currentPageUrl.ifBlank { targetUrl }
+                val method = request.method?.uppercase() ?: "GET"
+
+                // Strip tracking query parameters ($removeparam) on main-frame navigations
+                val mainDecision = viewModel.evaluateResourceRequest(
+                    targetUrl = targetUrl,
+                    pageUrl = sourceUrl,
+                    resourceType = "main_frame",
+                    method = method,
+                    tabId = tabId
+                )
+                if (mainDecision is UrlCheckResult.RewriteUrl && mainDecision.cleanedUrl != targetUrl) {
+                    currentPageUrl = mainDecision.cleanedUrl
+                    AdBlockWebViewHelper.updateActivePageUrl(tabId, mainDecision.cleanedUrl)
+                    view?.loadUrl(mainDecision.cleanedUrl)
+                    return true
+                }
+
+                // Block script/iframe-initiated (non-gesture) top-frame redirects to ad/tracker domains
+                if (!request.hasGesture() && currentPageUrl.isNotBlank()) {
+                    val currentHost = runCatching { currentPageUrl.toUri().host?.lowercase() }.getOrNull()
+                    val targetHost = uri.host?.lowercase()
+                    if (!currentHost.isNullOrBlank() && !targetHost.isNullOrBlank() && currentHost != targetHost) {
+                        if (viewModel.checkResourceBlocking(targetUrl, currentPageUrl, "sub_frame", tabId = tabId)) {
+                            return true
+                        }
                     }
                 }
             }

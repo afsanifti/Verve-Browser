@@ -19,6 +19,7 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 import org.json.JSONArray
 import org.json.JSONObject
+import android.webkit.CookieManager
 
 object AdBlockWebViewHelper {
 
@@ -38,6 +39,42 @@ object AdBlockWebViewHelper {
         activeTabUrls.remove(tabId)
     }
 
+    fun resolveServiceWorkerPageUrl(
+        headers: Map<String, String>,
+        viewModel: BrowserViewModel,
+        targetUrl: String
+    ): String {
+        val referer = headerIgnoreCase(headers, "Referer")
+            ?.takeIf { it.startsWith("http://", ignoreCase = true) || it.startsWith("https://", ignoreCase = true) }
+        if (referer != null) return referer
+
+        val origin = headerIgnoreCase(headers, "Origin")
+            ?.trim()
+            ?.removeSuffix("/")
+            ?.takeIf { it.startsWith("http://", ignoreCase = true) || it.startsWith("https://", ignoreCase = true) }
+        if (origin != null) {
+            val matchedTabUrl = activeTabUrls.values.firstOrNull { tabUrl ->
+                val normalized = tabUrl.removeSuffix("/")
+                normalized.equals(origin, ignoreCase = true) ||
+                        tabUrl.startsWith("$origin/", ignoreCase = true) ||
+                        tabUrl.startsWith("$origin?", ignoreCase = true) ||
+                        tabUrl.startsWith("$origin#", ignoreCase = true)
+            }
+            return matchedTabUrl ?: origin
+        }
+
+        val state = runCatching { viewModel.uiState.value }.getOrNull()
+        val activeTabId = state?.activeTabId.orEmpty()
+        if (activeTabId.isNotEmpty()) {
+            activeTabUrls[activeTabId]?.takeIf { it.isNotBlank() }?.let { return it }
+        }
+        state?.currentUrl
+            ?.takeIf { it.startsWith("http://", ignoreCase = true) || it.startsWith("https://", ignoreCase = true) }
+            ?.let { return it }
+
+        return targetUrl
+    }
+
     fun ensureServiceWorkerInterception(viewModel: BrowserViewModel) {
         if (!serviceWorkerHooked.compareAndSet(false, true)) return
         runCatching {
@@ -45,11 +82,11 @@ object AdBlockWebViewHelper {
                 object : ServiceWorkerClient() {
                     override fun shouldInterceptRequest(request: WebResourceRequest): WebResourceResponse? {
                         val targetUrl = request.url?.toString() ?: return null
-                        val headers = request.requestHeaders.orEmpty()
-                        val sourceUrl = headerIgnoreCase(headers, "Referer")
-                            ?: headerIgnoreCase(headers, "Origin")
-                            ?: activeTabUrls.values.firstOrNull()
-                            ?: targetUrl
+                        val sourceUrl = resolveServiceWorkerPageUrl(
+                            headers = request.requestHeaders.orEmpty(),
+                            viewModel = viewModel,
+                            targetUrl = targetUrl
+                        )
                         val resourceType = inferResourceType(request)
                         return interceptNetworkRequest(
                             viewModel = viewModel,
@@ -232,19 +269,34 @@ object AdBlockWebViewHelper {
         )
     }
 
-    private fun executeRewrittenRequest(
+    internal data class RewrittenResponseSpec(
+        val mimeType: String,
+        val encoding: String,
+        val statusCode: Int,
+        val reasonPhrase: String,
+        val headers: Map<String, String>,
+        val bodyStream: java.io.InputStream
+    )
+
+    internal fun fetchRewrittenResponseSpec(
         original: WebResourceRequest,
         rewrittenUrl: String
-    ): WebResourceResponse? {
+    ): RewrittenResponseSpec? {
         if (!original.method.equals("GET", ignoreCase = true)) return null
         return runCatching {
             val conn = (URL(rewrittenUrl).openConnection() as HttpURLConnection).apply {
                 connectTimeout = 8_000
                 readTimeout = 12_000
                 instanceFollowRedirects = true
-                original.requestHeaders.forEach { (k, v) ->
+                original.requestHeaders.orEmpty().forEach { (k, v) ->
                     if (!k.equals("Host", ignoreCase = true)) {
                         setRequestProperty(k, v)
+                    }
+                }
+                if (headerIgnoreCase(original.requestHeaders.orEmpty(), "Cookie") == null) {
+                    val cookie = runCatching { CookieManager.getInstance().getCookie(rewrittenUrl) }.getOrNull()
+                    if (!cookie.isNullOrBlank()) {
+                        setRequestProperty("Cookie", cookie)
                     }
                 }
             }
@@ -252,16 +304,57 @@ object AdBlockWebViewHelper {
             val contentType = conn.contentType ?: "text/plain"
             val mime = contentType.substringBefore(';').trim()
             val encoding = contentType.substringAfter("charset=", "UTF-8").substringBefore(';').trim()
+
+            val safeResponseHeaders = LinkedHashMap<String, String>()
+            conn.headerFields?.forEach { (key, values) ->
+                if (key != null && !values.isNullOrEmpty() && isForwardableResponseHeader(key)) {
+                    safeResponseHeaders[key] = values.joinToString(", ")
+                }
+            }
+
             val stream = if (code in 200..399) conn.inputStream else conn.errorStream
-            WebResourceResponse(
-                mime,
-                encoding,
-                code,
-                conn.responseMessage ?: "OK",
-                emptyMap(),
-                stream ?: ByteArrayInputStream(ByteArray(0))
+            RewrittenResponseSpec(
+                mimeType = mime,
+                encoding = encoding,
+                statusCode = code,
+                reasonPhrase = conn.responseMessage ?: "OK",
+                headers = safeResponseHeaders,
+                bodyStream = stream ?: ByteArrayInputStream(ByteArray(0))
             )
         }.getOrNull()
+    }
+
+    private fun executeRewrittenRequest(
+        original: WebResourceRequest,
+        rewrittenUrl: String
+    ): WebResourceResponse? {
+        val spec = fetchRewrittenResponseSpec(original, rewrittenUrl) ?: return null
+        return WebResourceResponse(
+            spec.mimeType,
+            spec.encoding,
+            spec.statusCode,
+            spec.reasonPhrase,
+            spec.headers,
+            spec.bodyStream
+        )
+    }
+
+    private fun isForwardableResponseHeader(headerName: String): Boolean {
+        return when (headerName.lowercase()) {
+            "content-type",
+            "cache-control",
+            "expires",
+            "etag",
+            "last-modified",
+            "vary",
+            "access-control-allow-origin",
+            "access-control-allow-methods",
+            "access-control-allow-headers",
+            "access-control-expose-headers",
+            "access-control-allow-credentials",
+            "timing-allow-origin" -> true
+            else -> false
+        }
     }
 
     @Suppress("unused")
@@ -375,10 +468,31 @@ object AdBlockWebViewHelper {
                 }
 
                 // 1. Execute Brave/uBlock scriptlets (##+js) BEFORE page scripts run
-                if (payload.injectedScript && payload.injectedScript.length > 0) {
+                if (payload.injectedScript && payload.injectedScript.length > 0 && !doc.__verveScriptletExecuted) {
+                    doc.__verveScriptletExecuted = true;
+                    var scriptExecuted = false;
                     try {
-                        (new Function(payload.injectedScript))();
+                        var scriptEl = doc.createElement('script');
+                        var nonceEl = doc.querySelector('script[nonce]');
+                        if (nonceEl) {
+                            var nonceVal = nonceEl.nonce || nonceEl.getAttribute('nonce');
+                            if (nonceVal) {
+                                scriptEl.setAttribute('nonce', nonceVal);
+                            }
+                        }
+                        scriptEl.textContent = payload.injectedScript;
+                        var host = doc.head || doc.documentElement;
+                        if (host) {
+                            host.appendChild(scriptEl);
+                            scriptEl.remove();
+                            scriptExecuted = true;
+                        }
                     } catch (e) {}
+                    if (!scriptExecuted) {
+                        try {
+                            (new Function(payload.injectedScript))();
+                        } catch (e) {}
+                    }
                 }
 
                 // 2. Create or reuse a single shared <style> element on THIS document

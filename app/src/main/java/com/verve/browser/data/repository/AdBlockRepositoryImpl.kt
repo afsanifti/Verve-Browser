@@ -1,34 +1,40 @@
 package com.verve.browser.data.repository
 
 import android.content.Context
-import android.net.Uri
+import android.os.Looper
 import android.util.Log
+import androidx.core.net.toUri
 import com.verve.browser.core.adblock.NativeAdBlocker
+import com.verve.browser.data.adblock.CnameResolver
+import com.verve.browser.domain.model.AdBlockMode
 import com.verve.browser.domain.model.CosmeticResources
 import com.verve.browser.domain.model.UrlCheckResult
 import com.verve.browser.domain.repository.AdBlockRepository
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
+import java.security.MessageDigest
 import java.util.concurrent.ConcurrentHashMap
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
-import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
-import kotlinx.coroutines.withContext
-import org.json.JSONObject
-import androidx.core.net.toUri
-import android.os.Looper
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
+import org.json.JSONObject
 
 class AdBlockRepositoryImpl(
     private val context: Context,
-    private val nativeBlocker: NativeAdBlocker
+    private val nativeBlocker: NativeAdBlocker,
+    private val cnameResolver: CnameResolver = CnameResolver()
 ) : AdBlockRepository {
 
     companion object {
@@ -36,11 +42,15 @@ class AdBlockRepositoryImpl(
         private const val PREFS_NAME = "verve_adblock_prefs"
         private const val KEY_WHITELISTED_DOMAINS = "whitelisted_domains"
         private const val KEY_LAST_UPDATED_MS = "last_updated_ms"
+        private const val KEY_ADBLOCK_MODE = "adblock_mode"
+        private const val AGGRESSIVE_THIRD_PARTY_SOURCE_URL = "https://verve-aggressive-context.invalid/"
 
         private const val DIR_ADBLOCK = "adblock"
         private const val FILE_ENGINE_DAT = "engine_v1.dat"
+        private const val FILE_ENGINE_MANIFEST = "engine_manifest.json"
         private const val FILE_RESOURCES_JSON = "resources.json"
         private const val ASSET_DIR_ADBLOCK = "adblock"
+        private const val ENGINE_FORMAT_VERSION = 1
 
         private val CURATED_FILTER_SOURCES = listOf(
             "easylist.txt" to "https://easylist.to/easylist/easylist.txt",
@@ -49,7 +59,9 @@ class AdBlockRepositoryImpl(
             "ublock-privacy.txt" to "https://raw.githubusercontent.com/uBlockOrigin/uAssets/master/filters/privacy.txt",
             "ublock-quick-fixes.txt" to "https://raw.githubusercontent.com/uBlockOrigin/uAssets/master/filters/quick-fixes.txt",
             "ublock-unbreak.txt" to "https://raw.githubusercontent.com/uBlockOrigin/uAssets/master/filters/unbreak.txt",
-            "brave-unbreak.txt" to "https://raw.githubusercontent.com/brave/adblock-lists/master/brave-unbreak.txt"
+            "brave-unbreak.txt" to "https://raw.githubusercontent.com/brave/adblock-lists/master/brave-unbreak.txt",
+            "brave-firstparty.txt" to "https://raw.githubusercontent.com/brave/adblock-lists/master/brave-lists/brave-firstparty.txt",
+            "brave-firstparty-cname.txt" to "https://raw.githubusercontent.com/brave/adblock-lists/master/brave-lists/brave-firstparty-cname.txt"
         )
 
         private const val RESOURCES_JSON_URL =
@@ -68,9 +80,27 @@ class AdBlockRepositoryImpl(
         addAll(saved.map { it.lowercase() })
     }
 
+    private val _adBlockMode = MutableStateFlow(
+        AdBlockMode.fromStorage(
+            runCatching {
+                prefs.getString(KEY_ADBLOCK_MODE, AdBlockMode.STANDARD.name)
+            }.getOrNull()
+        )
+    )
+    override val adBlockMode: StateFlow<AdBlockMode> = _adBlockMode.asStateFlow()
+
+    override fun setAdBlockMode(mode: AdBlockMode) {
+        if (_adBlockMode.value == mode) return
+        _adBlockMode.value = mode
+        prefs.edit().putString(KEY_ADBLOCK_MODE, mode.name).apply()
+    }
+
     @Volatile
     private var isFullEngineLoaded = false
     private val fullEngineReadyLatch = CountDownLatch(1)
+    private val hasWarmEngineManifest = runCatching {
+        File(File(appContext.filesDir, DIR_ADBLOCK), FILE_ENGINE_MANIFEST).exists()
+    }.getOrDefault(false)
     private val asyncInitExpected = AtomicBoolean(false)
     private val asyncInitInFlight = AtomicInteger(0)
 
@@ -100,11 +130,22 @@ class AdBlockRepositoryImpl(
 
                 val adblockDir = File(appContext.filesDir, DIR_ADBLOCK).apply { mkdirs() }
                 val datFile = File(adblockDir, FILE_ENGINE_DAT)
+                val manifestFile = File(adblockDir, FILE_ENGINE_MANIFEST)
                 val cachedResourcesFile = File(adblockDir, FILE_RESOURCES_JSON)
                 val resourcesJson = readBestResourcesJson(cachedResourcesFile)
+                val localRules = readAllLocalRules(adblockDir)
+                val expectedHash = if (localRules.isNotBlank()) {
+                    computeEngineContentHash(localRules, resourcesJson)
+                } else {
+                    ""
+                }
 
-                // 1. Fast path: restore pre-compiled binary .dat snapshot (~15-25 ms)
-                if (datFile.exists() && datFile.length() > 0L) {
+                // 1. Fast path: restore pre-compiled binary .dat snapshot ONLY if manifest hash & size match
+                if (datFile.exists() &&
+                    datFile.length() > 0L &&
+                    expectedHash.isNotEmpty() &&
+                    isManifestValid(manifestFile, datFile, expectedHash)
+                ) {
                     val loaded = runCatching {
                         nativeBlocker.safeLoadSerializedEngine(datFile.readBytes(), resourcesJson)
                     }.getOrDefault(false)
@@ -113,15 +154,15 @@ class AdBlockRepositoryImpl(
                         isFullEngineLoaded = true
                         Log.i(TAG, "Restored pre-compiled adblock engine (${datFile.length() / 1024} KB)")
                         return@withLock
-                    } else if (nativeBlocker.supportsV2Engine) {
-                        datFile.delete()
                     }
                 }
 
+                if (datFile.exists()) datFile.delete()
+                if (manifestFile.exists()) manifestFile.delete()
+
                 // 2. Local assets / cached .txt path
-                val localRules = readAllLocalRules(adblockDir)
                 if (localRules.isNotBlank() && resourcesJson.isNotBlank()) {
-                    if (compileAndPersistLocked(adblockDir, localRules, resourcesJson)) {
+                    if (compileAndPersistLocked(adblockDir, localRules, resourcesJson, expectedHash)) {
                         return@withLock
                     }
                 }
@@ -137,7 +178,9 @@ class AdBlockRepositoryImpl(
         }
     }
 
-    private fun awaitFullEngineReadyIfBackground(timeoutMs: Long = 1_500L) {
+    private fun awaitFullEngineReadyIfBackground(
+        timeoutMs: Long = if (hasWarmEngineManifest) 1_500L else 4_000L
+    ) {
         if (isFullEngineLoaded) return
         if (!asyncInitExpected.get() && asyncInitInFlight.get() <= 0) return
         val mainLooper = runCatching { Looper.getMainLooper() }.getOrNull()
@@ -200,13 +243,15 @@ class AdBlockRepositoryImpl(
         }
 
         val resourcesJson = readBestResourcesJson(File(adblockDir, FILE_RESOURCES_JSON))
-        compileAndPersistLocked(adblockDir, combinedRules, resourcesJson)
+        val contentHash = computeEngineContentHash(combinedRules, resourcesJson)
+        compileAndPersistLocked(adblockDir, combinedRules, resourcesJson, contentHash)
     }
 
     private fun compileAndPersistLocked(
         adblockDir: File,
         combinedRules: String,
-        resourcesJson: String
+        resourcesJson: String,
+        contentHash: String
     ): Boolean {
         val serialized = nativeBlocker.safeInitEngineFromLists(combinedRules, resourcesJson)
         isFullEngineLoaded = true
@@ -215,7 +260,20 @@ class AdBlockRepositoryImpl(
                 val datFile = File(adblockDir, FILE_ENGINE_DAT)
                 val tmpFile = File(adblockDir, "$FILE_ENGINE_DAT.tmp")
                 tmpFile.writeBytes(serialized)
-                tmpFile.renameTo(datFile)
+                if (!tmpFile.renameTo(datFile)) {
+                    datFile.writeBytes(serialized)
+                    tmpFile.delete()
+                }
+
+                val manifestFile = File(adblockDir, FILE_ENGINE_MANIFEST)
+                val manifestTmp = File(adblockDir, "$FILE_ENGINE_MANIFEST.tmp")
+                val manifestJson =
+                    """{"engineFormatVersion":$ENGINE_FORMAT_VERSION,"contentSha256":"$contentHash","datSizeBytes":${serialized.size.toLong()}}"""
+                manifestTmp.writeText(manifestJson)
+                if (!manifestTmp.renameTo(manifestFile)) {
+                    manifestFile.writeText(manifestJson)
+                    manifestTmp.delete()
+                }
             }
             prefs.edit().putLong(KEY_LAST_UPDATED_MS, System.currentTimeMillis()).apply()
             Log.i(
@@ -228,6 +286,30 @@ class AdBlockRepositoryImpl(
         return true
     }
 
+    private fun isManifestValid(manifestFile: File, datFile: File, expectedHash: String): Boolean {
+        if (!manifestFile.exists() || manifestFile.length() == 0L) return false
+        return runCatching {
+            val raw = manifestFile.readText()
+            val version = Regex(""""engineFormatVersion"\s*:\s*(\d+)""")
+                .find(raw)?.groupValues?.getOrNull(1)?.toIntOrNull() ?: -1
+            val hash = Regex(""""contentSha256"\s*:\s*"([0-9a-fA-F]+)""")
+                .find(raw)?.groupValues?.getOrNull(1).orEmpty()
+            val sizeBytes = Regex(""""datSizeBytes"\s*:\s*(\d+)""")
+                .find(raw)?.groupValues?.getOrNull(1)?.toLongOrNull() ?: -1L
+            version == ENGINE_FORMAT_VERSION &&
+                    hash == expectedHash &&
+                    sizeBytes == datFile.length()
+        }.getOrDefault(false)
+    }
+
+    private fun computeEngineContentHash(rules: String, resourcesJson: String): String {
+        val digest = MessageDigest.getInstance("SHA-256")
+        digest.update(rules.toByteArray(Charsets.UTF_8))
+        digest.update(0)
+        digest.update(resourcesJson.toByteArray(Charsets.UTF_8))
+        return digest.digest().joinToString("") { "%02x".format(it) }
+    }
+
     override fun shouldBlockUrl(
         targetUrl: String,
         pageUrl: String,
@@ -236,9 +318,143 @@ class AdBlockRepositoryImpl(
     ): UrlCheckResult {
         if (!nativeBlocker.isLibraryLoaded) return UrlCheckResult.Allow
         awaitFullEngineReadyIfBackground()
+        val effectiveSource = pageUrl.ifBlank { targetUrl }
+        val primaryResult = evaluateNativeRequest(
+            targetUrl = targetUrl,
+            sourceUrl = effectiveSource,
+            resourceType = resourceType,
+            method = method
+        )
+        if (primaryResult != UrlCheckResult.Allow) {
+            return primaryResult
+        }
+
+        val isSubresource = pageUrl.isNotBlank() &&
+                !resourceType.equals("main_frame", ignoreCase = true)
+
+        if (isSubresource &&
+            _adBlockMode.value == AdBlockMode.AGGRESSIVE &&
+            !effectiveSource.equals(AGGRESSIVE_THIRD_PARTY_SOURCE_URL, ignoreCase = true)
+        ) {
+            val aggressiveResult = evaluateNativeRequest(
+                targetUrl = targetUrl,
+                sourceUrl = AGGRESSIVE_THIRD_PARTY_SOURCE_URL,
+                resourceType = resourceType,
+                method = method
+            )
+            if (aggressiveResult != UrlCheckResult.Allow) {
+                return aggressiveResult
+            }
+        }
+
+        if (isSubresource) {
+            val cnameResult = evaluateUncloakedCnames(
+                targetUrl = targetUrl,
+                pageUrl = pageUrl,
+                effectiveSource = effectiveSource,
+                resourceType = resourceType,
+                method = method
+            )
+            if (cnameResult != UrlCheckResult.Allow) {
+                return cnameResult
+            }
+        }
+
+        return UrlCheckResult.Allow
+    }
+
+    private fun evaluateUncloakedCnames(
+        targetUrl: String,
+        pageUrl: String,
+        effectiveSource: String,
+        resourceType: String,
+        method: String
+    ): UrlCheckResult {
+        val targetHost = extractRawHost(targetUrl) ?: return UrlCheckResult.Allow
+        val pageHost = extractRawHost(pageUrl) ?: return UrlCheckResult.Allow
+        if (targetHost.equals(pageHost, ignoreCase = true)) return UrlCheckResult.Allow
+
+        val cnameChain = cnameResolver.resolveCnameChain(targetHost)
+        if (cnameChain.isEmpty()) return UrlCheckResult.Allow
+
+        for (canonicalHost in cnameChain) {
+            if (canonicalHost.equals(targetHost, ignoreCase = true)) continue
+            val uncloakedUrl = replaceUrlHost(targetUrl, canonicalHost) ?: continue
+
+            val primaryCnameCheck = evaluateNativeRequest(
+                targetUrl = uncloakedUrl,
+                sourceUrl = effectiveSource,
+                resourceType = resourceType,
+                method = method
+            )
+            if (primaryCnameCheck is UrlCheckResult.Block || primaryCnameCheck is UrlCheckResult.Redirect) {
+                return primaryCnameCheck
+            }
+
+            if (_adBlockMode.value == AdBlockMode.AGGRESSIVE &&
+                !effectiveSource.equals(AGGRESSIVE_THIRD_PARTY_SOURCE_URL, ignoreCase = true)
+            ) {
+                val aggressiveCnameCheck = evaluateNativeRequest(
+                    targetUrl = uncloakedUrl,
+                    sourceUrl = AGGRESSIVE_THIRD_PARTY_SOURCE_URL,
+                    resourceType = resourceType,
+                    method = method
+                )
+                if (aggressiveCnameCheck is UrlCheckResult.Block ||
+                    aggressiveCnameCheck is UrlCheckResult.Redirect
+                ) {
+                    return aggressiveCnameCheck
+                }
+            }
+        }
+        return UrlCheckResult.Allow
+    }
+
+    private fun extractRawHost(url: String): String? {
+        if (url.isBlank()) return null
+        val host = runCatching { java.net.URI(url).host }.getOrNull()
+            ?: runCatching { url.toUri().host }.getOrNull()
+        return host?.lowercase()?.takeIf { it.isNotBlank() }
+    }
+
+    internal fun replaceUrlHost(targetUrl: String, newHost: String): String? {
+        val schemeEnd = targetUrl.indexOf("://")
+        if (schemeEnd < 0) return null
+        val authorityStart = schemeEnd + 3
+        var authorityEnd = targetUrl.length
+        for (i in authorityStart until targetUrl.length) {
+            val ch = targetUrl[i]
+            if (ch == '/' || ch == '?' || ch == '#') {
+                authorityEnd = i
+                break
+            }
+        }
+        val authority = targetUrl.substring(authorityStart, authorityEnd)
+        val atIndex = authority.lastIndexOf('@')
+        val hostStartInAuth = if (atIndex >= 0) atIndex + 1 else 0
+        val colonIndex = authority.indexOf(':', hostStartInAuth)
+        val hostEndInAuth = if (colonIndex >= 0) colonIndex else authority.length
+        if (hostStartInAuth >= hostEndInAuth) return null
+
+        val updatedAuthority = buildString {
+            append(authority, 0, hostStartInAuth)
+            append(newHost)
+            append(authority, hostEndInAuth, authority.length)
+        }
+        return targetUrl.substring(0, authorityStart) +
+                updatedAuthority +
+                targetUrl.substring(authorityEnd)
+    }
+
+    private fun evaluateNativeRequest(
+        targetUrl: String,
+        sourceUrl: String,
+        resourceType: String,
+        method: String
+    ): UrlCheckResult {
         val evaluation = nativeBlocker.safeEvaluateRequest(
             url = targetUrl,
-            sourceUrl = pageUrl.ifBlank { targetUrl },
+            sourceUrl = sourceUrl,
             resourceType = resourceType,
             method = method
         ) ?: return UrlCheckResult.Allow
@@ -272,6 +488,11 @@ class AdBlockRepositoryImpl(
         }
         awaitFullEngineReadyIfBackground()
         val rawJson = nativeBlocker.safeGetCosmeticResources(pageUrl) ?: return CosmeticResources()
+        val parsedGenericHide = Regex(""""generichide"\s*:\s*(true|false)""", RegexOption.IGNORE_CASE)
+            .find(rawJson)?.groupValues?.getOrNull(1)?.equals("true", ignoreCase = true) ?: false
+        val effectiveGenericHide =
+            if (_adBlockMode.value == AdBlockMode.AGGRESSIVE) false else parsedGenericHide
+
         return runCatching {
             val obj = JSONObject(rawJson)
             val hideArr = obj.optJSONArray("hideSelectors")
@@ -296,9 +517,40 @@ class AdBlockRepositoryImpl(
                 hideSelectors = hideList,
                 exceptions = excList,
                 injectedScript = obj.optString("injectedScript", ""),
-                genericHide = obj.optBoolean("generichide", false)
+                genericHide = effectiveGenericHide
             )
-        }.getOrDefault(CosmeticResources())
+        }.getOrDefault(
+            CosmeticResources(
+                hideSelectors = extractJsonStringArray(rawJson, "hideSelectors"),
+                exceptions = extractJsonStringArray(rawJson, "exceptions"),
+                injectedScript = "",
+                genericHide = effectiveGenericHide
+            )
+        )
+    }
+
+    private fun extractJsonStringArray(rawJson: String, key: String): List<String> {
+        val arrayBody = Regex(""""$key"\s*:\s*\[(.*?)]""", RegexOption.DOT_MATCHES_ALL)
+            .find(rawJson)?.groupValues?.getOrNull(1) ?: return emptyList()
+        return Regex(""""((?:\\.|[^"\\])*)"""")
+            .findAll(arrayBody)
+            .map { it.groupValues[1] }
+            .filter { it.isNotBlank() }
+            .toList()
+    }
+
+    override fun isSiteWhitelisted(pageUrl: String): Boolean {
+        val host = extractNormalizedHost(pageUrl) ?: return false
+        var candidate = host
+        while (candidate.contains('.')) {
+            if (whitelistedHosts.contains(candidate)) {
+                return true
+            }
+            val nextDot = candidate.indexOf('.')
+            if (nextDot < 0 || nextDot + 1 >= candidate.length) break
+            candidate = candidate.substring(nextDot + 1)
+        }
+        return false
     }
 
     override fun getHiddenClassIdSelectors(
@@ -316,11 +568,6 @@ class AdBlockRepositoryImpl(
             exceptions = exceptions.toTypedArray()
         ) ?: return emptyList()
         return matched.filter { it.isNotBlank() }
-    }
-
-    override fun isSiteWhitelisted(pageUrl: String): Boolean {
-        val host = extractNormalizedHost(pageUrl) ?: return false
-        return whitelistedHosts.contains(host)
     }
 
     override fun toggleSiteWhitelist(pageUrl: String): Boolean {
@@ -404,8 +651,10 @@ class AdBlockRepositoryImpl(
 
     private fun extractNormalizedHost(url: String): String? {
         if (url.isBlank()) return null
-        return runCatching { url.toUri().host?.lowercase()?.removePrefix("www.") }
-            .getOrNull()
+        val host = runCatching { java.net.URI(url).host }.getOrNull()
+            ?: runCatching { url.toUri().host }.getOrNull()
+        return host?.lowercase()
+            ?.removePrefix("www.")
             ?.takeIf { it.isNotBlank() }
     }
 }

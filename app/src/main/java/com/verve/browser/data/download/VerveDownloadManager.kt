@@ -66,6 +66,10 @@ object VerveDownloadManager {
         }
 
         webView.setDownloadListener { url, userAgent, contentDisposition, mimeType, contentLength ->
+            if (DownloadResponseValidator.shouldIgnoreBackgroundDownload(url, contentDisposition, mimeType)) {
+                return@setDownloadListener
+            }
+
             val refererUrl = webView.url
             val guessedFileName = DownloadResponseValidator.sanitizeFileName(
                 URLUtil.guessFileName(url, contentDisposition, mimeType)

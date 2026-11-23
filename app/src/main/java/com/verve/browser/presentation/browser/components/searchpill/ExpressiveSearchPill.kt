@@ -67,6 +67,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.lerp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.util.lerp
 import androidx.core.net.toUri
 import com.verve.browser.R
 import com.verve.browser.presentation.browser.components.pillTertiaryLoadingGradient
@@ -182,10 +183,9 @@ fun ExpressiveSearchPill(
         animationSpec = ExpressiveToolbarQuickSpring,
         label = "pillExpandProgress"
     )
-    val resolvedExpand = (expandProgress ?: internalExpandProgress).coerceAtLeast(0f)
-    val clampedExpand = resolvedExpand.coerceIn(0f, 1f)
-    val pillHeight = lerp(30.dp, 72.dp, resolvedExpand.coerceIn(0f, 1.03f))
-    val iconSlidePx = with(density) { 10.dp.toPx() }
+    val clampedExpand = (expandProgress ?: internalExpandProgress).coerceIn(0f, 1f)
+    val pillHeight = lerp(32.dp, 72.dp, clampedExpand)
+    val iconSlidePx = with(density) { 14.dp.toPx() }
 
     val submitAction = {
         if (textFieldValue.text.isNotBlank()) {
@@ -239,9 +239,12 @@ fun ExpressiveSearchPill(
             modifier = Modifier.fillMaxSize()
         ) {
             if (isWebMode && !isEditingUrl) {
-                val iconProgress = ((clampedExpand - 0.30f) / 0.70f).coerceIn(0f, 1f)
-                val iconScale = 0.68f + 0.32f * iconProgress
-                val domainHorizontalPadding = lerp(14.dp, 54.dp, clampedExpand)
+                // Fade & tuck side icons smoothly in the upper half of expansion so they never
+                // collide with the domain label while the pill narrows.
+                val iconProgress = ((clampedExpand - 0.52f) / 0.48f).coerceIn(0f, 1f)
+                val iconScale = 0.72f + 0.28f * iconProgress
+                val domainTextScale = lerp(0.84f, 1.0f, clampedExpand)
+                val domainHorizontalPadding = lerp(14.dp, 52.dp, clampedExpand)
 
                 Box(
                     modifier = Modifier
@@ -294,59 +297,67 @@ fun ExpressiveSearchPill(
                             .padding(horizontal = domainHorizontalPadding),
                         contentAlignment = Alignment.Center
                     ) {
+                        // Fixed 15.sp font size scaled on GPU avoids per-frame glyph re-layout jitter
                         Text(
                             text = extractDisplayDomain(currentUrl),
                             style = MaterialTheme.typography.titleMedium.copy(
                                 color = contentColor,
-                                fontSize = lerp(12.sp, 16.sp, clampedExpand),
+                                fontSize = 15.sp,
                                 fontWeight = FontWeight.Medium,
                                 textAlign = TextAlign.Center
                             ),
+                            softWrap = false,
                             maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.graphicsLayer {
+                                scaleX = domainTextScale
+                                scaleY = domainTextScale
+                            }
                         )
                     }
 
-                    IconButton(
-                        onClick = onSiteSettingsClick,
-                        enabled = iconProgress > 0.65f,
-                        modifier = Modifier
-                            .align(Alignment.CenterStart)
-                            .padding(start = 8.dp)
-                            .graphicsLayer {
-                                alpha = iconProgress
-                                scaleX = iconScale
-                                scaleY = iconScale
-                                translationX = -iconSlidePx * (1f - iconProgress)
-                            }
-                    ) {
-                        Icon(
-                            painter = painterResource(id = R.drawable.ic_siteinfo),
-                            contentDescription = "Site Settings",
-                            tint = contentColor,
-                            modifier = Modifier.size(22.dp)
-                        )
-                    }
+                    if (iconProgress > 0.01f) {
+                        IconButton(
+                            onClick = onSiteSettingsClick,
+                            enabled = iconProgress > 0.65f,
+                            modifier = Modifier
+                                .align(Alignment.CenterStart)
+                                .padding(start = 8.dp)
+                                .graphicsLayer {
+                                    alpha = iconProgress
+                                    scaleX = iconScale
+                                    scaleY = iconScale
+                                    translationX = iconSlidePx * (1f - iconProgress)
+                                }
+                        ) {
+                            Icon(
+                                painter = painterResource(id = R.drawable.ic_siteinfo),
+                                contentDescription = "Site Settings",
+                                tint = contentColor,
+                                modifier = Modifier.size(22.dp)
+                            )
+                        }
 
-                    IconButton(
-                        onClick = if (isPageLoading) onStopLoadingClick else onRefreshClick,
-                        enabled = iconProgress > 0.65f,
-                        modifier = Modifier
-                            .align(Alignment.CenterEnd)
-                            .padding(end = 8.dp)
-                            .graphicsLayer {
-                                alpha = iconProgress
-                                scaleX = iconScale
-                                scaleY = iconScale
-                                translationX = iconSlidePx * (1f - iconProgress)
-                            }
-                    ) {
-                        Icon(
-                            imageVector = if (isPageLoading) SearchPillSymbols.Close else SearchPillSymbols.Refresh,
-                            contentDescription = if (isPageLoading) "Stop Loading" else "Reload Page",
-                            tint = contentColor,
-                            modifier = Modifier.size(22.dp)
-                        )
+                        IconButton(
+                            onClick = if (isPageLoading) onStopLoadingClick else onRefreshClick,
+                            enabled = iconProgress > 0.65f,
+                            modifier = Modifier
+                                .align(Alignment.CenterEnd)
+                                .padding(end = 8.dp)
+                                .graphicsLayer {
+                                    alpha = iconProgress
+                                    scaleX = iconScale
+                                    scaleY = iconScale
+                                    translationX = -iconSlidePx * (1f - iconProgress)
+                                }
+                        ) {
+                            Icon(
+                                imageVector = if (isPageLoading) SearchPillSymbols.Close else SearchPillSymbols.Refresh,
+                                contentDescription = if (isPageLoading) "Stop Loading" else "Reload Page",
+                                tint = contentColor,
+                                modifier = Modifier.size(22.dp)
+                            )
+                        }
                     }
                 }
             } else {

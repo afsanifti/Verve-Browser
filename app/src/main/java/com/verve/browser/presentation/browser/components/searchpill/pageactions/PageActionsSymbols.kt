@@ -12,6 +12,7 @@ import com.composables.icons.materialsymbols.rounded.Close
 import com.composables.icons.materialsymbols.rounded.Delete
 import com.composables.icons.materialsymbols.rounded.Desktop_windows
 import com.composables.icons.materialsymbols.rounded.Download
+import com.composables.icons.materialsymbols.rounded.Encrypted
 import com.composables.icons.materialsymbols.rounded.Find_in_page
 import com.composables.icons.materialsymbols.rounded.Link
 import com.composables.icons.materialsymbols.rounded.Lock_open
@@ -23,12 +24,14 @@ import com.composables.icons.materialsymbols.rounded.Share
 import com.composables.icons.materialsymbols.rounded.Shield
 import com.composables.icons.materialsymbols.rounded.Swap_horiz
 import com.composables.icons.materialsymbols.rounded.Zoom_in
+import com.composables.icons.materialsymbols.roundedfilled.Encrypted
 import com.composables.icons.materialsymbols.roundedfilled.Article as ArticleFilled
 import com.composables.icons.materialsymbols.roundedfilled.Bookmark as BookmarkFilled
 import com.composables.icons.materialsymbols.roundedfilled.Cookie as CookieFilled
 import com.composables.icons.materialsymbols.roundedfilled.Desktop_windows as DesktopWindowsFilled
 import com.composables.icons.materialsymbols.roundedfilled.Lock as LockFilled
 import com.composables.icons.materialsymbols.roundedfilled.Shield as ShieldFilled
+import com.verve.browser.domain.model.AdBlockMode
 
 internal object PageActionsSymbols {
     val Add: ImageVector get() = MaterialSymbols.Rounded.Add
@@ -66,4 +69,14 @@ internal object PageActionsSymbols {
     val Cookie: ImageVector get() = MaterialSymbols.RoundedFilled.CookieFilled
     val ArrowBack: ImageVector get() = MaterialSymbols.Rounded.Arrow_back
     val Delete: ImageVector get() = MaterialSymbols.Rounded.Delete
+    val Encrypted: ImageVector get() = MaterialSymbols.RoundedFilled.Encrypted
+}
+
+internal fun shieldIconForState(
+    isShieldEnabled: Boolean,
+    adBlockMode: AdBlockMode
+): ImageVector = when {
+    !isShieldEnabled -> PageActionsSymbols.Shield
+    adBlockMode == AdBlockMode.AGGRESSIVE -> PageActionsSymbols.Encrypted
+    else -> PageActionsSymbols.ShieldFilled
 }

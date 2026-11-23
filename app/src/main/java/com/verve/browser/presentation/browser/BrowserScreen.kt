@@ -97,6 +97,8 @@ fun BrowserScreen(
     val tabWebViewPool = remember { TabWebViewPool() }
     val thumbnailCache = remember(context) { TabThumbnailCache(context) }
 
+    val adBlockMode by viewModel.adBlockMode.collectAsState()
+
     val enterFullscreenVideo: (View?, WebChromeClient.CustomViewCallback?) -> Unit = { view, callback ->
         if (view == null) {
             runCatching { callback?.onCustomViewHidden() }
@@ -409,10 +411,13 @@ fun BrowserScreen(
         }
 
         // LAYER 5: Settings & About Verve
+        // LAYER 5: Settings & About Verve
         if (isSettingsOpen) {
             VerveBrowserTheme(siteSeedColor = null) {
                 SettingsFlow(
                     updateController = updateController,
+                    adBlockMode = adBlockMode,
+                    onSelectAdBlockMode = viewModel::setAdBlockMode,
                     openAboutVerveDirectly = openAboutVerveDirectly,
                     autoStartUpdate = autoStartUpdateOnAboutVerve,
                     onAutoStartUpdateHandled = { autoStartUpdateOnAboutVerve = false },

@@ -142,6 +142,7 @@ internal fun rememberBrowserOverlayState(
         state.isTranslated = false
         state.isReaderMode = false
         state.isSiteControlsSheetOpen = false
+        state.isShieldEnabled = !viewModel.isSiteWhitelisted(uiState.currentUrl)
     }
     LaunchedEffect(uiState.currentUrl) {
         state.isBookmarked = false

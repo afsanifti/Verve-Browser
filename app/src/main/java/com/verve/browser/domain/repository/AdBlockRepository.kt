@@ -1,10 +1,17 @@
-// AdBlockRepository.kt
 package com.verve.browser.domain.repository
 
+import com.verve.browser.domain.model.AdBlockMode
 import com.verve.browser.domain.model.CosmeticResources
 import com.verve.browser.domain.model.UrlCheckResult
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 
 interface AdBlockRepository {
+    val adBlockMode: StateFlow<AdBlockMode>
+        get() = MutableStateFlow(AdBlockMode.STANDARD).asStateFlow()
+
+    fun setAdBlockMode(mode: AdBlockMode) {}
     fun initializeEngine(initialRules: List<String>)
     fun prepareAsyncEngineInit() {}
     suspend fun initializeEngineAsync()

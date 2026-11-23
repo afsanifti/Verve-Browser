@@ -31,6 +31,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.verve.browser.domain.model.AdBlockMode
 
 private val ToggleCornerSpring = spring<Dp>(
     dampingRatio = 0.92f,
@@ -40,6 +41,7 @@ private val ToggleCornerSpring = spring<Dp>(
 @Composable
 internal fun PageActionsBottomControls(
     isShieldEnabled: Boolean,
+    adBlockMode: AdBlockMode,
     isBookmarked: Boolean,
     isDesktopSite: Boolean,
     isReaderMode: Boolean,
@@ -50,6 +52,18 @@ internal fun PageActionsBottomControls(
     onReaderModeToggle: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val shieldIcon = when {
+        !isShieldEnabled -> PageActionsSymbols.Shield
+        adBlockMode == AdBlockMode.AGGRESSIVE -> PageActionsSymbols.Encrypted
+        else -> PageActionsSymbols.ShieldFilled
+    }
+
+    val shieldDescription = when {
+        !isShieldEnabled -> "Shield off"
+        adBlockMode == AdBlockMode.AGGRESSIVE -> "Aggressive shield"
+        else -> "Standard shield"
+    }
+
     Column(
         modifier = modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(12.dp)
@@ -93,8 +107,8 @@ internal fun PageActionsBottomControls(
             verticalAlignment = Alignment.CenterVertically
         ) {
             ExpressiveQuickToggleTile(
-                icon = if (isShieldEnabled) PageActionsSymbols.ShieldFilled else PageActionsSymbols.Shield,
-                contentDescription = "Ad and tracker shield",
+                icon = shieldIcon,
+                contentDescription = shieldDescription,
                 isActive = isShieldEnabled,
                 onClick = onShieldToggle,
                 modifier = Modifier.weight(1f)

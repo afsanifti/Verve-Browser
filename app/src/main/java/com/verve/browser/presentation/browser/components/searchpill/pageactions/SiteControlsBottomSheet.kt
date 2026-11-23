@@ -75,9 +75,12 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import androidx.compose.material3.Switch
+import com.verve.browser.domain.model.AdBlockMode
 
 private enum class SiteControlsPage {
     MAIN,
+    VERVE_SHIELDS,
     CONNECTION_SECURITY,
     COOKIES_AND_DATA
 }
@@ -95,6 +98,10 @@ fun SiteControlsBottomSheet(
     webView: WebView?,
     favicon: Bitmap? = webView?.favicon,
     isQuicConnection: Boolean = false,
+    blockedAdsCount: Int = 0,
+    isShieldEnabled: Boolean = true,
+    adBlockMode: AdBlockMode = AdBlockMode.STANDARD,
+    onToggleShield: () -> Unit = {},
     onOpenSettingsClick: () -> Unit = {},
     onDismissRequest: () -> Unit
 ) {
@@ -164,8 +171,25 @@ fun SiteControlsBottomSheet(
                         host = host,
                         favicon = favicon,
                         isSecure = isSecure,
+                        blockedAdsCount = blockedAdsCount,
+                        isShieldEnabled = isShieldEnabled,
+                        adBlockMode = adBlockMode,
+                        onToggleShield = onToggleShield,
+                        onShieldsClick = { currentPage = SiteControlsPage.VERVE_SHIELDS },
                         onConnectionClick = { currentPage = SiteControlsPage.CONNECTION_SECURITY },
                         onCookiesClick = { currentPage = SiteControlsPage.COOKIES_AND_DATA }
+                    )
+                }
+
+                SiteControlsPage.VERVE_SHIELDS -> {
+                    VerveShieldsContent(
+                        host = host,
+                        favicon = favicon,
+                        blockedAdsCount = blockedAdsCount,
+                        isShieldEnabled = isShieldEnabled,
+                        adBlockMode = adBlockMode,
+                        onToggleShield = onToggleShield,
+                        onBackClick = { currentPage = SiteControlsPage.MAIN }
                     )
                 }
 
@@ -253,10 +277,21 @@ private fun SiteControlsMainContent(
     host: String,
     favicon: Bitmap?,
     isSecure: Boolean,
+    blockedAdsCount: Int,
+    isShieldEnabled: Boolean,
+    adBlockMode: AdBlockMode = AdBlockMode.STANDARD,
+    onToggleShield: () -> Unit,
+    onShieldsClick: () -> Unit,
     onConnectionClick: () -> Unit,
     onCookiesClick: () -> Unit
 ) {
     val dividerColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f)
+    val shieldSubtitle = if (isShieldEnabled) {
+        val unit = if (blockedAdsCount == 1) "tracker or ad" else "trackers & ads"
+        "Up • $blockedAdsCount $unit blocked"
+    } else {
+        "Down for this site"
+    }
 
     Column(
         modifier = Modifier
@@ -265,6 +300,55 @@ private fun SiteControlsMainContent(
             .padding(bottom = 12.dp)
     ) {
         SiteDomainHeader(host = host, favicon = favicon)
+
+        HorizontalDivider(thickness = 1.dp, color = dividerColor)
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable(onClick = onShieldsClick)
+                .padding(start = 24.dp, end = 20.dp, top = 14.dp, bottom = 14.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = shieldIconForState(
+                    isShieldEnabled = isShieldEnabled,
+                    adBlockMode = adBlockMode
+                ),
+                contentDescription = null,
+                tint = if (isShieldEnabled) {
+                    MaterialTheme.colorScheme.primary
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                },
+                modifier = Modifier.size(22.dp)
+            )
+
+            Spacer(modifier = Modifier.width(20.dp))
+
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "Verve Shields",
+                    style = MaterialTheme.typography.bodyLarge.copy(
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Medium
+                    ),
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Text(
+                    text = shieldSubtitle,
+                    style = MaterialTheme.typography.bodySmall.copy(fontSize = 13.sp),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
+            Spacer(modifier = Modifier.width(12.dp))
+
+            Switch(
+                checked = isShieldEnabled,
+                onCheckedChange = { onToggleShield() }
+            )
+        }
 
         HorizontalDivider(thickness = 1.dp, color = dividerColor)
 
@@ -332,6 +416,105 @@ private fun SiteControlsMainContent(
     }
 }
 
+@Composable
+private fun VerveShieldsContent(
+    host: String,
+    favicon: Bitmap?,
+    blockedAdsCount: Int,
+    isShieldEnabled: Boolean,
+    adBlockMode: AdBlockMode,
+    onToggleShield: () -> Unit,
+    onBackClick: () -> Unit
+) {
+    val modeLabel = if (adBlockMode == AdBlockMode.AGGRESSIVE) "Aggressive" else "Standard"
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .navigationBarsPadding()
+            .padding(bottom = 20.dp)
+    ) {
+        SiteDomainHeader(host = host, favicon = favicon)
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 8.dp, end = 20.dp, top = 2.dp, bottom = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            IconButton(onClick = onBackClick) {
+                Icon(
+                    imageVector = PageActionsSymbols.ArrowBack,
+                    contentDescription = "Back to site controls",
+                    tint = MaterialTheme.colorScheme.onSurface
+                )
+            }
+
+            Spacer(modifier = Modifier.width(8.dp))
+
+            Text(
+                text = "Verve Shields",
+                style = MaterialTheme.typography.titleMedium.copy(
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Normal
+                ),
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.weight(1f)
+            )
+
+            Switch(
+                checked = isShieldEnabled,
+                onCheckedChange = { onToggleShield() }
+            )
+        }
+
+        Surface(
+            shape = RoundedCornerShape(20.dp),
+            color = MaterialTheme.colorScheme.surfaceContainerHighest,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp, vertical = 8.dp)
+        ) {
+            Column(
+                modifier = Modifier.padding(18.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Text(
+                    text = if (isShieldEnabled) "$blockedAdsCount" else "0",
+                    style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold),
+                    color = if (isShieldEnabled) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    }
+                )
+                Text(
+                    text = if (isShieldEnabled) {
+                        "Trackers and ads blocked on this page ($modeLabel mode)"
+                    } else {
+                        "Shields are paused for $host"
+                    },
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+
+        Text(
+            text = if (isShieldEnabled) {
+                "Verve is blocking cross-site trackers, CNAME-cloaked scripts, and intrusive ads on $host."
+            } else {
+                "If a site breaks or fails to sign in, keep Shields down for $host. Other sites remain protected."
+            },
+            style = MaterialTheme.typography.bodyMedium.copy(
+                fontSize = 14.sp,
+                lineHeight = 20.sp
+            ),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(horizontal = 24.dp, vertical = 10.dp)
+        )
+    }
+}
 @Composable
 private fun CookiesAndSiteDataContent(
     host: String,

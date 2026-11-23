@@ -14,11 +14,12 @@ class ShouldBlockUrlUseCase(
         resourceType: String,
         method: String = "GET"
     ): UrlCheckResult {
-        if (resourceType.equals("main_frame", ignoreCase = true)) {
-            return UrlCheckResult.Allow
-        }
         if (repository.isSiteWhitelisted(pageUrl)) {
             return UrlCheckResult.Allow
+        }
+        if (resourceType.equals("main_frame", ignoreCase = true)) {
+            val decision = repository.shouldBlockUrl(targetUrl, pageUrl, resourceType, method)
+            return if (decision is UrlCheckResult.RewriteUrl) decision else UrlCheckResult.Allow
         }
         return repository.shouldBlockUrl(targetUrl, pageUrl, resourceType, method)
     }
@@ -45,4 +46,11 @@ class ShouldBlockUrlUseCase(
     fun isSiteWhitelisted(pageUrl: String): Boolean = repository.isSiteWhitelisted(pageUrl)
 
     fun toggleSiteWhitelist(pageUrl: String): Boolean = repository.toggleSiteWhitelist(pageUrl)
+
+    val adBlockMode: kotlinx.coroutines.flow.StateFlow<com.verve.browser.domain.model.AdBlockMode>
+        get() = repository.adBlockMode
+
+    fun setAdBlockMode(mode: com.verve.browser.domain.model.AdBlockMode) {
+        repository.setAdBlockMode(mode)
+    }
 }
