@@ -122,6 +122,16 @@ object LanguagePreferences {
         writeStringList(prefs(context), KEY_PREFERRED_LANGUAGES, current)
     }
 
+    fun reorderPreferredLanguages(context: Context, fromIndex: Int, toIndex: Int) {
+        initialize(context)
+        val current = _preferredLanguages.value.toMutableList()
+        if (fromIndex !in current.indices || toIndex !in current.indices || fromIndex == toIndex) return
+        val item = current.removeAt(fromIndex)
+        current.add(toIndex, item)
+        _preferredLanguages.value = current
+        writeStringList(prefs(context), KEY_PREFERRED_LANGUAGES, current)
+    }
+
     fun movePreferredLanguageDown(context: Context, index: Int) {
         initialize(context)
         val current = _preferredLanguages.value.toMutableList()

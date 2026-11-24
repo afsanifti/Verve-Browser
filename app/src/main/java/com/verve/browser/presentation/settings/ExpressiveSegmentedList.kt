@@ -96,7 +96,7 @@ fun ExpressiveSegmentedGroup(
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 20.dp, vertical = 18.dp)
+                        .padding(horizontal = 20.dp, vertical = 13.dp)
                 ) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
@@ -119,7 +119,7 @@ fun ExpressiveSegmentedGroup(
                                     text = item.subtitle,
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = subtitleColor,
-                                    modifier = Modifier.padding(top = 2.dp)
+                                    modifier = Modifier.padding(top = 1.dp)
                                 )
                             }
                         }
@@ -131,7 +131,7 @@ fun ExpressiveSegmentedGroup(
                     }
 
                     if (item.bottomContent != null) {
-                        Spacer(modifier = Modifier.height(12.dp))
+                        Spacer(modifier = Modifier.height(10.dp))
                         item.bottomContent.invoke()
                     }
                 }

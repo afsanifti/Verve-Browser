@@ -6,6 +6,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.calculateEndPadding
+import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -34,16 +36,16 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.verve.browser.data.network.QuicNetworkManager
+import com.verve.browser.domain.model.AdBlockMode
 import com.verve.browser.presentation.browser.util.DefaultBrowserHelper
 import com.verve.browser.presentation.theme.rememberThemeConfig
-import com.verve.browser.domain.model.AdBlockMode
-
 
 @Composable
 fun SettingsScreen(
@@ -60,6 +62,7 @@ fun SettingsScreen(
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
+    val layoutDirection = LocalLayoutDirection.current
     val themeConfig = rememberThemeConfig()
     val isQuicEnabled by QuicNetworkManager.isQuicEnabled.collectAsState()
 
@@ -118,9 +121,14 @@ fun SettingsScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(innerPadding)
+                .padding(top = innerPadding.calculateTopPadding())
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 16.dp, vertical = 8.dp)
+                .padding(
+                    start = innerPadding.calculateStartPadding(layoutDirection) + 16.dp,
+                    end = innerPadding.calculateEndPadding(layoutDirection) + 16.dp,
+                    top = 8.dp,
+                    bottom = innerPadding.calculateBottomPadding() + 24.dp
+                )
         ) {
             // Profile Section
             SettingsSectionLabel(text = "Profile")
@@ -236,8 +244,6 @@ fun SettingsScreen(
                     )
                 )
             )
-
-            Spacer(modifier = Modifier.height(24.dp))
         }
     }
 }

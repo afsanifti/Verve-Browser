@@ -1,6 +1,11 @@
 package com.verve.browser.presentation.settings
 
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -45,19 +50,31 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.zIndex
 import com.composables.icons.materialsymbols.MaterialSymbols
 import com.composables.icons.materialsymbols.rounded.Add
 import com.composables.icons.materialsymbols.rounded.Drag_handle
@@ -82,6 +99,8 @@ fun LanguageSettingsScreen(
 ) {
     val context = LocalContext.current
     val layoutDirection = LocalLayoutDirection.current
+    val density = LocalDensity.current
+    val haptics = LocalHapticFeedback.current
 
     LaunchedEffect(Unit) {
         LanguagePreferences.initialize(context)
@@ -95,10 +114,31 @@ fun LanguageSettingsScreen(
     val neverTranslateLanguages by LanguagePreferences.neverTranslateLanguages.collectAsState()
 
     var activeSheet by remember { mutableStateOf<LanguagePickerSheetType?>(null) }
-    var openMenuIndex by remember { mutableStateOf<Int?>(null) }
+    var openMenuLanguage by remember { mutableStateOf<String?>(null) }
+
+    // Local mutable list for smooth 60/120fps drag reordering
+    val displayLanguages = remember { mutableStateListOf<String>() }
+    var draggingLanguage by remember { mutableStateOf<String?>(null) }
+    var dragStartIndex by remember { mutableIntStateOf(-1) }
+    var dragOffsetY by remember { mutableFloatStateOf(0f) }
+    val rowHeightsPx = remember { mutableStateMapOf<String, Int>() }
+    val gapPx = with(density) { ListItemDefaults.SegmentedGap.toPx() }
+
+    LaunchedEffect(preferredLanguages, draggingLanguage) {
+        if (draggingLanguage == null && displayLanguages.toList() != preferredLanguages) {
+            displayLanguages.clear()
+            displayLanguages.addAll(preferredLanguages)
+        }
+    }
 
     val segmentedColors = ListItemDefaults.segmentedColors(
         containerColor = MaterialTheme.colorScheme.surfaceContainer
+    )
+    val activeDragColors = ListItemDefaults.segmentedColors(
+        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+    )
+    val singleCardShapes = ListItemDefaults.shapes(
+        shape = RoundedCornerShape(20.dp)
     )
 
     val deviceRegionLabel = remember { LanguagePreferences.deviceLanguageWithRegionLabel() }
@@ -134,7 +174,7 @@ fun LanguageSettingsScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(top = innerPadding.calculateTopPadding())
-                .verticalScroll(rememberScrollState())
+                .verticalScroll(rememberScrollState(), enabled = draggingLanguage == null)
                 .padding(
                     start = innerPadding.calculateStartPadding(layoutDirection) + 16.dp,
                     end = innerPadding.calculateEndPadding(layoutDirection) + 16.dp,
@@ -146,7 +186,7 @@ fun LanguageSettingsScreen(
             SettingsSectionLabel(text = "Verve's language")
             SegmentedListItem(
                 onClick = { activeSheet = LanguagePickerSheetType.APP_LANGUAGE },
-                shapes = ListItemDefaults.segmentedShapes(index = 0, count = 1),
+                shapes = singleCardShapes,
                 colors = segmentedColors,
                 contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
                 modifier = Modifier.fillMaxWidth(),
@@ -168,7 +208,7 @@ fun LanguageSettingsScreen(
 
             Spacer(modifier = Modifier.height(22.dp))
 
-            // 2. Preferred languages
+            // 2. Preferred languages (drag-to-reorder via `=` handle + `⋮` overflow menu)
             SettingsSectionLabel(text = "Preferred languages")
             Text(
                 text = "Let websites know the languages you speak. They'll show content in those languages, when possible.",
@@ -177,110 +217,238 @@ fun LanguageSettingsScreen(
                 modifier = Modifier.padding(start = 4.dp, end = 4.dp, bottom = 10.dp)
             )
 
-            val preferredTotalRows = preferredLanguages.size + 1
+            val preferredTotalRows = displayLanguages.size + 1
             Column(
                 modifier = Modifier.fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(ListItemDefaults.SegmentedGap)
             ) {
-                preferredLanguages.forEachIndexed { index, langName ->
-                    val nativeName = PageTranslationManager.supportedLanguages
-                        .firstOrNull { it.displayName.equals(langName, ignoreCase = true) }
-                        ?.nativeName
+                displayLanguages.forEachIndexed { index, langName ->
+                    key(langName) {
+                        val isDragging = draggingLanguage == langName
+                        val currentIndex by rememberUpdatedState(index)
+                        val nativeName = PageTranslationManager.supportedLanguages
+                            .firstOrNull { it.displayName.equals(langName, ignoreCase = true) }
+                            ?.nativeName
 
-                    SegmentedListItem(
-                        onClick = { openMenuIndex = index },
-                        shapes = ListItemDefaults.segmentedShapes(index = index, count = preferredTotalRows),
-                        colors = segmentedColors,
-                        contentPadding = PaddingValues(start = 16.dp, end = 6.dp, top = 8.dp, bottom = 8.dp),
-                        modifier = Modifier.fillMaxWidth(),
-                        leadingContent = {
-                            Icon(
-                                imageVector = MaterialSymbols.Rounded.Drag_handle,
-                                contentDescription = "Reorder language",
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(22.dp)
-                            )
-                        },
-                        content = {
-                            Text(
-                                text = langName,
-                                style = MaterialTheme.typography.bodyLarge,
-                                fontWeight = FontWeight.Medium,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                        },
-                        supportingContent = if (!nativeName.isNullOrBlank() && !nativeName.equals(langName, ignoreCase = true)) {
-                            {
-                                Text(
-                                    text = nativeName,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
+                        val animatedOffsetY by animateFloatAsState(
+                            targetValue = if (isDragging) dragOffsetY else 0f,
+                            animationSpec = spring(
+                                dampingRatio = Spring.DampingRatioNoBouncy,
+                                stiffness = Spring.StiffnessHigh
+                            ),
+                            label = "dragOffsetY"
+                        )
+                        val animatedScale by animateFloatAsState(
+                            targetValue = if (isDragging) 1.02f else 1f,
+                            animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
+                            label = "dragScale"
+                        )
+                        val animatedElevation by animateDpAsState(
+                            targetValue = if (isDragging) 8.dp else 0.dp,
+                            animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
+                            label = "dragElevation"
+                        )
+
+                        val itemShapes = if (isDragging) {
+                            singleCardShapes
                         } else {
-                            null
-                        },
-                        trailingContent = {
-                            Box {
-                                IconButton(onClick = { openMenuIndex = index }) {
+                            ListItemDefaults.segmentedShapes(
+                                index = index,
+                                count = preferredTotalRows
+                            )
+                        }
+
+                        SegmentedListItem(
+                            onClick = {
+                                if (draggingLanguage == null) {
+                                    openMenuLanguage = langName
+                                }
+                            },
+                            shapes = itemShapes,
+                            colors = if (isDragging) activeDragColors else segmentedColors,
+                            contentPadding = PaddingValues(start = 8.dp, end = 6.dp, top = 8.dp, bottom = 8.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .zIndex(if (isDragging) 1f else 0f)
+                                .onSizeChanged { rowHeightsPx[langName] = it.height }
+                                .graphicsLayer {
+                                    translationY = if (isDragging) dragOffsetY else animatedOffsetY
+                                    scaleX = animatedScale
+                                    scaleY = animatedScale
+                                    shadowElevation = with(density) { animatedElevation.toPx() }
+                                },
+                            leadingContent = {
+                                Box(
+                                    contentAlignment = Alignment.Center,
+                                    modifier = Modifier
+                                        .size(40.dp)
+                                        .pointerInput(langName) {
+                                            detectVerticalDragGestures(
+                                                onDragStart = {
+                                                    if (displayLanguages.size > 1) {
+                                                        openMenuLanguage = null
+                                                        draggingLanguage = langName
+                                                        dragStartIndex = currentIndex
+                                                        dragOffsetY = 0f
+                                                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                                    }
+                                                },
+                                                onVerticalDrag = { change, dragAmount ->
+                                                    if (draggingLanguage != langName) return@detectVerticalDragGestures
+                                                    change.consume()
+                                                    dragOffsetY += dragAmount
+
+                                                    val idx = displayLanguages.indexOf(langName)
+                                                    if (idx == -1) return@detectVerticalDragGestures
+
+                                                    // Swap downward when dragged past half the next row's height
+                                                    if (idx < displayLanguages.lastIndex) {
+                                                        val nextLang = displayLanguages[idx + 1]
+                                                        val stepDown = (rowHeightsPx[nextLang] ?: 140) + gapPx
+                                                        if (dragOffsetY > stepDown * 0.5f) {
+                                                            displayLanguages.removeAt(idx)
+                                                            displayLanguages.add(idx + 1, langName)
+                                                            dragOffsetY -= stepDown
+                                                            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                                        }
+                                                    }
+
+                                                    // Swap upward when dragged past half the previous row's height
+                                                    if (idx > 0) {
+                                                        val prevLang = displayLanguages[idx - 1]
+                                                        val stepUp = (rowHeightsPx[prevLang] ?: 140) + gapPx
+                                                        if (dragOffsetY < -stepUp * 0.5f) {
+                                                            displayLanguages.removeAt(idx)
+                                                            displayLanguages.add(idx - 1, langName)
+                                                            dragOffsetY += stepUp
+                                                            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                                        }
+                                                    }
+                                                },
+                                                onDragEnd = {
+                                                    val finalIndex = displayLanguages.indexOf(langName)
+                                                    if (dragStartIndex != -1 && finalIndex != -1 && dragStartIndex != finalIndex) {
+                                                        LanguagePreferences.reorderPreferredLanguages(
+                                                            context = context,
+                                                            fromIndex = dragStartIndex,
+                                                            toIndex = finalIndex
+                                                        )
+                                                    }
+                                                    draggingLanguage = null
+                                                    dragStartIndex = -1
+                                                    dragOffsetY = 0f
+                                                },
+                                                onDragCancel = {
+                                                    val finalIndex = displayLanguages.indexOf(langName)
+                                                    if (dragStartIndex != -1 && finalIndex != -1 && dragStartIndex != finalIndex) {
+                                                        LanguagePreferences.reorderPreferredLanguages(
+                                                            context = context,
+                                                            fromIndex = dragStartIndex,
+                                                            toIndex = finalIndex
+                                                        )
+                                                    }
+                                                    draggingLanguage = null
+                                                    dragStartIndex = -1
+                                                    dragOffsetY = 0f
+                                                }
+                                            )
+                                        }
+                                ) {
                                     Icon(
-                                        imageVector = MaterialSymbols.Rounded.More_vert,
-                                        contentDescription = "Language options",
-                                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                        imageVector = MaterialSymbols.Rounded.Drag_handle,
+                                        contentDescription = "Drag to reorder $langName",
+                                        tint = if (isDragging) {
+                                            MaterialTheme.colorScheme.primary
+                                        } else {
+                                            MaterialTheme.colorScheme.onSurfaceVariant
+                                        },
+                                        modifier = Modifier.size(22.dp)
                                     )
                                 }
-                                DropdownMenu(
-                                    expanded = openMenuIndex == index,
-                                    onDismissRequest = { openMenuIndex = null }
-                                ) {
-                                    if (index > 0) {
-                                        DropdownMenuItem(
-                                            text = { Text("Move up") },
-                                            onClick = {
-                                                openMenuIndex = null
-                                                LanguagePreferences.movePreferredLanguageUp(context, index)
-                                            }
+                            },
+                            content = {
+                                Text(
+                                    text = langName,
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    fontWeight = FontWeight.Medium,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            },
+                            supportingContent = if (!nativeName.isNullOrBlank() && !nativeName.equals(langName, ignoreCase = true)) {
+                                {
+                                    Text(
+                                        text = nativeName,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            } else {
+                                null
+                            },
+                            trailingContent = {
+                                Box {
+                                    IconButton(onClick = { openMenuLanguage = langName }) {
+                                        Icon(
+                                            imageVector = MaterialSymbols.Rounded.More_vert,
+                                            contentDescription = "Language options",
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant
                                         )
-                                        DropdownMenuItem(
-                                            text = { Text("Move to top") },
-                                            onClick = {
-                                                openMenuIndex = null
-                                                repeat(index) { step ->
-                                                    LanguagePreferences.movePreferredLanguageUp(context, index - step)
+                                    }
+                                    DropdownMenu(
+                                        expanded = openMenuLanguage == langName,
+                                        onDismissRequest = { openMenuLanguage = null }
+                                    ) {
+                                        if (index > 0) {
+                                            DropdownMenuItem(
+                                                text = { Text("Move up") },
+                                                onClick = {
+                                                    openMenuLanguage = null
+                                                    LanguagePreferences.movePreferredLanguageUp(context, index)
                                                 }
-                                            }
-                                        )
-                                    }
-                                    if (index < preferredLanguages.lastIndex) {
-                                        DropdownMenuItem(
-                                            text = { Text("Move down") },
-                                            onClick = {
-                                                openMenuIndex = null
-                                                LanguagePreferences.movePreferredLanguageDown(context, index)
-                                            }
-                                        )
-                                    }
-                                    if (preferredLanguages.size > 1) {
-                                        DropdownMenuItem(
-                                            text = { Text("Remove") },
-                                            onClick = {
-                                                openMenuIndex = null
-                                                LanguagePreferences.removePreferredLanguage(context, langName)
-                                            }
-                                        )
+                                            )
+                                            DropdownMenuItem(
+                                                text = { Text("Move to top") },
+                                                onClick = {
+                                                    openMenuLanguage = null
+                                                    LanguagePreferences.reorderPreferredLanguages(
+                                                        context = context,
+                                                        fromIndex = index,
+                                                        toIndex = 0
+                                                    )
+                                                }
+                                            )
+                                        }
+                                        if (index < displayLanguages.lastIndex) {
+                                            DropdownMenuItem(
+                                                text = { Text("Move down") },
+                                                onClick = {
+                                                    openMenuLanguage = null
+                                                    LanguagePreferences.movePreferredLanguageDown(context, index)
+                                                }
+                                            )
+                                        }
+                                        if (displayLanguages.size > 1) {
+                                            DropdownMenuItem(
+                                                text = { Text("Remove") },
+                                                onClick = {
+                                                    openMenuLanguage = null
+                                                    LanguagePreferences.removePreferredLanguage(context, langName)
+                                                }
+                                            )
+                                        }
                                     }
                                 }
                             }
-                        }
-                    )
+                        )
+                    }
                 }
 
                 // "+ Add language" bottom segment
                 SegmentedListItem(
                     onClick = { activeSheet = LanguagePickerSheetType.ADD_PREFERRED_LANGUAGE },
                     shapes = ListItemDefaults.segmentedShapes(
-                        index = preferredLanguages.size,
+                        index = displayLanguages.size,
                         count = preferredTotalRows
                     ),
                     colors = segmentedColors,
@@ -311,7 +479,7 @@ fun LanguageSettingsScreen(
             SettingsSectionLabel(text = "Translation settings")
             SegmentedListItem(
                 onClick = { LanguagePreferences.setOfferToTranslate(context, !offerToTranslate) },
-                shapes = ListItemDefaults.segmentedShapes(index = 0, count = 1),
+                shapes = singleCardShapes,
                 colors = segmentedColors,
                 contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
                 modifier = Modifier.fillMaxWidth(),
