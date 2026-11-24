@@ -10,6 +10,7 @@ import com.composables.icons.materialsymbols.rounded.Check
 import com.composables.icons.materialsymbols.rounded.Chevron_right
 import com.composables.icons.materialsymbols.rounded.Close
 import com.composables.icons.materialsymbols.rounded.Delete
+import com.composables.icons.materialsymbols.rounded.Description
 import com.composables.icons.materialsymbols.rounded.Desktop_windows
 import com.composables.icons.materialsymbols.rounded.Download
 import com.composables.icons.materialsymbols.rounded.Encrypted
@@ -24,6 +25,7 @@ import com.composables.icons.materialsymbols.rounded.Share
 import com.composables.icons.materialsymbols.rounded.Shield
 import com.composables.icons.materialsymbols.rounded.Swap_horiz
 import com.composables.icons.materialsymbols.rounded.Zoom_in
+import com.composables.icons.materialsymbols.roundedfilled.Description
 import com.composables.icons.materialsymbols.roundedfilled.Encrypted
 import com.composables.icons.materialsymbols.roundedfilled.Article as ArticleFilled
 import com.composables.icons.materialsymbols.roundedfilled.Bookmark as BookmarkFilled
@@ -59,8 +61,8 @@ internal object PageActionsSymbols {
     val DesktopWindows: ImageVector get() = MaterialSymbols.Rounded.Desktop_windows
     val DesktopWindowsFilled: ImageVector get() = MaterialSymbols.RoundedFilled.DesktopWindowsFilled
 
-    val Article: ImageVector get() = MaterialSymbols.Rounded.Article
-    val ArticleFilled: ImageVector get() = MaterialSymbols.RoundedFilled.ArticleFilled
+    val Article: ImageVector get() = MaterialSymbols.Rounded.Description
+    val ArticleFilled: ImageVector get() = MaterialSymbols.RoundedFilled.Description
 
     // Site Controls (Filled Lock & Cookie match Chrome's sheet)
     val Public: ImageVector get() = MaterialSymbols.Rounded.Public

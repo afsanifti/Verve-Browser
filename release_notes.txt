@@ -1,6 +1,8 @@
 ✨ What's New
 
-* Stability and improvement on adblocker (including CNAME uncloaking startup fixes)
-* **3-State Verve Shields**: Tap the shield quick toggle to cycle between **Off**, **Standard**, and **Aggressive** modes, while automatically defaulting to your Settings preference on new pages
-* **Smoother Toolbar Animations**: Eliminated layout jitter when collapsing and expanding the bottom toolbar, and centered the search pill on the New Tab screen
-* **Smarter Download Filtering**: Prevented silent background API and telemetry responses (such as `.json` and `sgasync`) from triggering unwanted automatic downloads
+- **Reader Mode**: Distill articles into a clean, distraction-free reading layout styled with your Material 3 theme colors, complete with a quick-exit indicator in the search pill and system Back button support
+- **Built-In Page Translation**: Translate webpages in place with an integrated language picker inside the Page Actions sheet and instant restoration to the original page
+- **3-State Verve Shields**: Tap the shield quick toggle to cycle between **Off**, **Standard**, and **Aggressive** modes, while automatically defaulting to your Settings preference on new pages
+- **Smoother Toolbar Animations**: Eliminated layout jitter when collapsing and expanding the bottom toolbar, and centered the search pill on the New Tab screen
+- **Smarter Download Filtering**: Prevented silent background API and telemetry responses (such as `.json` and `sgasync`) from triggering unwanted automatic downloads
+- Stability and improvement on adblocker (including CNAME uncloaking startup fixes)

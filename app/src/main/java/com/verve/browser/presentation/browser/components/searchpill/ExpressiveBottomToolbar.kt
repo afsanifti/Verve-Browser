@@ -84,6 +84,7 @@ fun ExpressiveBottomToolbar(
     findTotalMatches: Int = 0,
     isPageLoading: Boolean = false,
     isIncognito: Boolean = false,
+    isReaderMode: Boolean = false,
     canSwipeToLeftTab: Boolean = false,
     canSwipeToRightTab: Boolean = false,
     bottomWindowInsets: WindowInsets = WindowInsets.navigationBars.only(WindowInsetsSides.Bottom),
@@ -102,6 +103,7 @@ fun ExpressiveBottomToolbar(
     onToggleIncognito: () -> Unit = {},
     onLeftActionClick: () -> Unit = {},
     onSiteSettingsClick: () -> Unit = {},
+    onExitReaderModeClick: () -> Unit = {},
     onRefreshClick: () -> Unit = {},
     onStopLoadingClick: () -> Unit = {}
 ) {
@@ -181,8 +183,7 @@ fun ExpressiveBottomToolbar(
     val activeSideFactor = (1f - singlePillFactor.coerceIn(0f, 1f))
     val leftVisibility = (clampedExpand * webModeFactor.coerceIn(0f, 1f) * activeSideFactor).coerceIn(0f, 1f)
     val rightVisibility = (clampedExpand * activeSideFactor).coerceIn(0f, 1f)
-    // Used only to keep the pill width identical between New Tab and Browsing mode
-    val pillWidthLeftReserveFactor = maxOf(leftVisibility, rightVisibility)
+    val effectiveLeftReserveFactor = maxOf(leftVisibility, rightVisibility)
 
     val currentSwipe = swipeProgress.value
     val leftCompressDp = SideButtonMaxCompressDp * (-currentSwipe).coerceIn(0f, 1f) * leftVisibility
@@ -365,6 +366,7 @@ fun ExpressiveBottomToolbar(
                 isPageLoading = isPageLoading,
                 isThemeLoading = isThemeLoading,
                 isIncognito = isIncognito,
+                isReaderMode = isReaderMode,
                 isFindInPage = isFindInPage,
                 findQuery = findQuery,
                 findActiveMatchOrdinal = findActiveMatchOrdinal,
@@ -375,6 +377,7 @@ fun ExpressiveBottomToolbar(
                 onFocusChanged = onSearchFocusChanged,
                 onExpandClick = { onCollapsedChange(false) },
                 onSiteSettingsClick = onSiteSettingsClick,
+                onExitReaderModeClick = onExitReaderModeClick,
                 onRefreshClick = onRefreshClick,
                 onStopLoadingClick = onStopLoadingClick,
                 onToggleIncognito = onToggleIncognito,
@@ -401,12 +404,11 @@ fun ExpressiveBottomToolbar(
         val leftCompressPx = leftCompressDp.roundToPx()
         val rightCompressPx = rightCompressDp.roundToPx()
 
-        val widthReserveLeftPx = ((sideSlotFullPx - leftCompressPx) * pillWidthLeftReserveFactor).roundToInt()
-        val leftSlotPx = ((sideSlotFullPx - leftCompressPx) * leftVisibility).roundToInt()
+        val leftSlotPx = ((sideSlotFullPx - leftCompressPx) * effectiveLeftReserveFactor).roundToInt()
         val rightSlotPx = ((sideSlotFullPx - rightCompressPx) * rightVisibility).roundToInt()
 
         val collapsedPillWidthPx = collapsedPillWidth.roundToPx().coerceAtMost(maxWidthPx)
-        val expandedPillWidthPx = (maxWidthPx - widthReserveLeftPx - rightSlotPx)
+        val expandedPillWidthPx = (maxWidthPx - leftSlotPx - rightSlotPx)
             .coerceAtLeast(collapsedPillWidthPx)
         val pillWidthPx = lerp(collapsedPillWidthPx, expandedPillWidthPx, clampedExpand)
 

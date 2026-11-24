@@ -5,6 +5,7 @@ import android.content.ClipData
 import android.os.Build
 import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.Crossfade
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
@@ -15,6 +16,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.animation.shrinkHorizontally
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -26,6 +28,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -42,6 +45,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -89,6 +93,7 @@ fun ExpressiveSearchPill(
     isPageLoading: Boolean = false,
     isThemeLoading: Boolean = false,
     isIncognito: Boolean = false,
+    isReaderMode: Boolean = false,
     isFindInPage: Boolean = false,
     findQuery: String = "",
     findActiveMatchOrdinal: Int = 0,
@@ -99,6 +104,7 @@ fun ExpressiveSearchPill(
     onFocusChanged: (Boolean) -> Unit = {},
     onExpandClick: () -> Unit = {},
     onSiteSettingsClick: () -> Unit = {},
+    onExitReaderModeClick: () -> Unit = {},
     onRefreshClick: () -> Unit = {},
     onStopLoadingClick: () -> Unit = {},
     onToggleIncognito: () -> Unit = {},
@@ -176,6 +182,25 @@ fun ExpressiveSearchPill(
         },
         animationSpec = tween(durationMillis = 320, easing = FastOutSlowInEasing),
         label = "pillContentColor"
+    )
+
+    val readerBadgeContainerColor by animateColorAsState(
+        targetValue = when {
+            !isReaderMode -> Color.Transparent
+            isPillLoading -> MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.2f)
+            else -> MaterialTheme.colorScheme.primary
+        },
+        animationSpec = tween(durationMillis = 240, easing = FastOutSlowInEasing),
+        label = "readerBadgeContainerColor"
+    )
+
+    val readerBadgeContentColor by animateColorAsState(
+        targetValue = when {
+            isReaderMode && !isPillLoading -> MaterialTheme.colorScheme.onPrimary
+            else -> contentColor
+        },
+        animationSpec = tween(durationMillis = 240, easing = FastOutSlowInEasing),
+        label = "readerBadgeContentColor"
     )
 
     val internalExpandProgress by animateFloatAsState(
@@ -318,7 +343,13 @@ fun ExpressiveSearchPill(
 
                     if (iconProgress > 0.01f) {
                         IconButton(
-                            onClick = onSiteSettingsClick,
+                            onClick = {
+                                if (isReaderMode) {
+                                    onExitReaderModeClick()
+                                } else {
+                                    onSiteSettingsClick()
+                                }
+                            },
                             enabled = iconProgress > 0.65f,
                             modifier = Modifier
                                 .align(Alignment.CenterStart)
@@ -330,12 +361,35 @@ fun ExpressiveSearchPill(
                                     translationX = iconSlidePx * (1f - iconProgress)
                                 }
                         ) {
-                            Icon(
-                                painter = painterResource(id = R.drawable.ic_siteinfo),
-                                contentDescription = "Site Settings",
-                                tint = contentColor,
-                                modifier = Modifier.size(22.dp)
-                            )
+                            Box(
+                                contentAlignment = Alignment.Center,
+                                modifier = Modifier
+                                    .size(38.dp)
+                                    .clip(CircleShape)
+                                    .background(readerBadgeContainerColor)
+                            ) {
+                                Crossfade(
+                                    targetState = isReaderMode,
+                                    animationSpec = tween(durationMillis = 200),
+                                    label = "leadingSiteInfoReaderCrossfade"
+                                ) { activeReaderMode ->
+                                    if (activeReaderMode) {
+                                        Icon(
+                                            imageVector = SearchPillSymbols.Description,
+                                            contentDescription = "Exit Reading Mode",
+                                            tint = readerBadgeContentColor,
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                    } else {
+                                        Icon(
+                                            painter = painterResource(id = R.drawable.ic_siteinfo),
+                                            contentDescription = "Site Settings",
+                                            tint = contentColor,
+                                            modifier = Modifier.size(22.dp)
+                                        )
+                                    }
+                                }
+                            }
                         }
 
                         IconButton(

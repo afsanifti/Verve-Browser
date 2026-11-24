@@ -1,6 +1,7 @@
 package com.verve.browser.presentation.browser.screen.overlay
 
 import android.webkit.WebView
+import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
@@ -15,11 +16,15 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import com.verve.browser.domain.model.AdBlockMode
 import com.verve.browser.presentation.browser.BrowserUiState
 import com.verve.browser.presentation.browser.BrowserViewModel
 import com.verve.browser.presentation.browser.components.searchpill.PageActionsBottomSheet
 import com.verve.browser.presentation.browser.components.searchpill.pageactions.SiteControlsBottomSheet
+import com.verve.browser.presentation.browser.util.PageTranslationManager
+import com.verve.browser.presentation.browser.util.ReaderModeManager
+import com.verve.browser.presentation.browser.util.ReaderPalette
 import com.verve.browser.presentation.browser.util.TabThumbnailCache
 import com.verve.browser.presentation.downloads.DownloadsRoute
 
@@ -38,6 +43,8 @@ internal fun BrowserOverlayModals(
     onDownloadsClick: () -> Unit,
     onZoomClick: () -> Unit
 ) {
+    val context = LocalContext.current
+    val readerPalette = ReaderPalette.fromColorScheme(MaterialTheme.colorScheme)
     val adBlockMode by viewModel.adBlockMode.collectAsState()
 
     // Tracks the global mode chosen in Settings so temporary per-page icon taps don't overwrite it
@@ -57,6 +64,33 @@ internal fun BrowserOverlayModals(
         if (uiState.currentUrl.isNotBlank() && adBlockMode != settingsDefaultMode) {
             isQuickCyclingMode = true
             viewModel.setAdBlockMode(settingsDefaultMode)
+        }
+    }
+
+    val runPageTranslation: (String) -> Unit = { targetLanguage ->
+        val activeWebView = webViewRef
+        if (
+            activeWebView == null ||
+            uiState.currentUrl.isBlank() ||
+            targetLanguage.equals("English", ignoreCase = true)
+        ) {
+            activeWebView?.let { PageTranslationManager.restore(it) }
+            overlayState.isTranslated = false
+        } else {
+            overlayState.isTranslated = true
+            PageTranslationManager.translatePage(
+                webView = activeWebView,
+                targetLanguageName = targetLanguage
+            ) { success ->
+                overlayState.isTranslated = success
+                if (!success) {
+                    Toast.makeText(
+                        context,
+                        "Unable to translate this page",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }
+            }
         }
     }
 
@@ -125,7 +159,11 @@ internal fun BrowserOverlayModals(
             isReaderMode = overlayState.isReaderMode,
             isQuicConnection = overlayState.isQuicEnabled && overlayState.isQuicConnection,
             onDismissRequest = { overlayState.isPageActionsSheetOpen = false },
-            onRefreshClick = { webViewRef?.reload() },
+            onRefreshClick = {
+                overlayState.isReaderMode = false
+                overlayState.isTranslated = false
+                webViewRef?.reload()
+            },
             onStopLoadingClick = {
                 webViewRef?.stopLoading()
                 viewModel.onPageLoadFinished(uiState.activeTabId)
@@ -137,11 +175,23 @@ internal fun BrowserOverlayModals(
                 }
             },
             onTranslateToggle = { enabled ->
-                overlayState.isTranslated = enabled
+                if (enabled && !overlayState.translateLanguage.equals("English", ignoreCase = true)) {
+                    overlayState.isPageActionsSheetOpen = false
+                    runPageTranslation(overlayState.translateLanguage)
+                } else {
+                    webViewRef?.let { PageTranslationManager.restore(it) }
+                    overlayState.isTranslated = false
+                }
             },
-            onTranslateSettingsClick = {
-                overlayState.translateLanguage =
-                    if (overlayState.translateLanguage == "English") "Bengali" else "English"
+            onTranslateLanguageSelected = { selectedLanguage ->
+                overlayState.translateLanguage = selectedLanguage
+                if (selectedLanguage.equals("English", ignoreCase = true)) {
+                    webViewRef?.let { PageTranslationManager.restore(it) }
+                    overlayState.isTranslated = false
+                } else {
+                    overlayState.isPageActionsSheetOpen = false
+                    runPageTranslation(selectedLanguage)
+                }
             },
             onSiteControlsClick = {
                 overlayState.isSiteControlsSheetOpen = true
@@ -182,8 +232,31 @@ internal fun BrowserOverlayModals(
                     reload()
                 }
             },
-            onReaderModeToggle = { reader ->
-                overlayState.isReaderMode = reader
+            onReaderModeToggle = { enabled ->
+                val activeWebView = webViewRef
+                if (activeWebView == null) {
+                    overlayState.isReaderMode = false
+                } else if (enabled) {
+                    ReaderModeManager.enable(
+                        webView = activeWebView,
+                        palette = readerPalette
+                    ) { activated ->
+                        overlayState.isReaderMode = activated
+                        if (activated) {
+                            overlayState.isPageActionsSheetOpen = false
+                        } else {
+                            Toast.makeText(
+                                context,
+                                "No article content found on this page",
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        }
+                    }
+                } else {
+                    ReaderModeManager.disable(activeWebView)
+                    overlayState.isReaderMode = false
+                    overlayState.isPageActionsSheetOpen = false
+                }
             }
         )
     }

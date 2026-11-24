@@ -5,11 +5,9 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -30,6 +28,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.res.painterResource
@@ -57,11 +56,8 @@ internal fun PageActionsMiddleSections(
         containerColor = MaterialTheme.colorScheme.surfaceContainerHighest
     )
 
-    val resolvedTargetLanguage = if (translateLanguage.equals(sourceLanguage, ignoreCase = true)) {
-        "Bengali"
-    } else {
-        translateLanguage
-    }
+    val isSourceLanguage = translateLanguage.equals(sourceLanguage, ignoreCase = true)
+    val effectiveTranslated = isTranslated && !isSourceLanguage
 
     val actionItems = listOf(
         Triple(painterResource(id = R.drawable.ic_siteinfo), "Site controls", onSiteControlsClick),
@@ -74,41 +70,32 @@ internal fun PageActionsMiddleSections(
         modifier = modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        // Split Translate Row: Main Toggle Card + Standalone Gear Tile
-        Row(
+        // Full-width Translate Card (tap card for language settings, switch to toggle)
+        Surface(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(IntrinsicSize.Min),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically
+                .clip(RoundedCornerShape(22.dp))
+                .clickable(onClick = onTranslateSettingsClick),
+            shape = RoundedCornerShape(22.dp),
+            color = MaterialTheme.colorScheme.surfaceContainerHighest
         ) {
-            Surface(
+            Row(
                 modifier = Modifier
-                    .weight(1f)
-                    .fillMaxHeight(),
-                shape = RoundedCornerShape(22.dp),
-                color = MaterialTheme.colorScheme.surfaceContainerHighest
+                    .fillMaxWidth()
+                    .padding(start = 18.dp, end = 16.dp, top = 12.dp, bottom = 12.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(start = 18.dp, end = 16.dp, top = 12.dp, bottom = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .weight(1f)
-                            .clickable(onClick = onTranslateSettingsClick)
-                    ) {
-                        Text(
-                            text = "Translate",
-                            color = MaterialTheme.colorScheme.onSurface,
-                            style = MaterialTheme.typography.titleMedium.copy(
-                                fontSize = 16.sp,
-                                fontWeight = FontWeight.Medium
-                            )
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Translate",
+                        color = MaterialTheme.colorScheme.onSurface,
+                        style = MaterialTheme.typography.titleMedium.copy(
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Medium
                         )
-                        Spacer(modifier = Modifier.height(3.dp))
+                    )
+                    Spacer(modifier = Modifier.height(3.dp))
+                    if (effectiveTranslated) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(6.dp)
@@ -124,12 +111,12 @@ internal fun PageActionsMiddleSections(
                             )
                             Icon(
                                 imageVector = PageActionsSymbols.SwapHoriz,
-                                contentDescription = "Swap translation direction",
+                                contentDescription = "Translation direction",
                                 tint = MaterialTheme.colorScheme.primary,
                                 modifier = Modifier.size(16.dp)
                             )
                             Text(
-                                text = resolvedTargetLanguage,
+                                text = translateLanguage,
                                 color = MaterialTheme.colorScheme.primary,
                                 style = MaterialTheme.typography.bodySmall.copy(
                                     fontSize = 13.sp,
@@ -139,42 +126,40 @@ internal fun PageActionsMiddleSections(
                                 overflow = TextOverflow.Ellipsis
                             )
                         }
+                    } else {
+                        Text(
+                            text = "Off",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            style = MaterialTheme.typography.bodySmall.copy(
+                                fontSize = 13.sp
+                            ),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
                     }
-
-                    Spacer(modifier = Modifier.width(12.dp))
-
-                    Box(
-                        modifier = Modifier
-                            .width(1.dp)
-                            .height(32.dp)
-                            .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f))
-                    )
-
-                    Spacer(modifier = Modifier.width(14.dp))
-
-                    Switch(
-                        checked = isTranslated,
-                        onCheckedChange = onTranslateToggle
-                    )
                 }
-            }
 
-            Surface(
-                onClick = onTranslateSettingsClick,
-                modifier = Modifier
-                    .width(56.dp)
-                    .fillMaxHeight(),
-                shape = RoundedCornerShape(22.dp),
-                color = MaterialTheme.colorScheme.surfaceContainerHighest
-            ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Icon(
-                        imageVector = PageActionsSymbols.Settings,
-                        contentDescription = "Translation settings",
-                        tint = MaterialTheme.colorScheme.onSurface,
-                        modifier = Modifier.size(22.dp)
-                    )
-                }
+                Spacer(modifier = Modifier.width(12.dp))
+
+                Box(
+                    modifier = Modifier
+                        .width(1.dp)
+                        .height(32.dp)
+                        .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f))
+                )
+
+                Spacer(modifier = Modifier.width(14.dp))
+
+                Switch(
+                    checked = effectiveTranslated,
+                    onCheckedChange = { enabled ->
+                        if (enabled && isSourceLanguage) {
+                            onTranslateSettingsClick()
+                        } else {
+                            onTranslateToggle(enabled)
+                        }
+                    }
+                )
             }
         }
 

@@ -1,6 +1,16 @@
 package com.verve.browser.presentation.browser.components.searchpill
 
 import android.content.ClipData
+import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -37,9 +47,15 @@ import com.verve.browser.domain.model.AdBlockMode
 import com.verve.browser.presentation.browser.components.searchpill.pageactions.PageActionsBottomControls
 import com.verve.browser.presentation.browser.components.searchpill.pageactions.PageActionsMiddleSections
 import com.verve.browser.presentation.browser.components.searchpill.pageactions.PageActionsTopBar
+import com.verve.browser.presentation.browser.components.searchpill.pageactions.PageActionsTranslatePage
 import kotlin.time.Duration.Companion.milliseconds
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+
+private enum class PageActionsPage {
+    MAIN,
+    TRANSLATE
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -61,6 +77,7 @@ fun PageActionsBottomSheet(
     onStopLoadingClick: () -> Unit = {},
     onForwardClick: () -> Unit = {},
     onTranslateToggle: (Boolean) -> Unit = {},
+    onTranslateLanguageSelected: (String) -> Unit = {},
     onTranslateSettingsClick: () -> Unit = {},
     onSiteControlsClick: () -> Unit = {},
     onFindOnPageClick: () -> Unit = {},
@@ -79,6 +96,7 @@ fun PageActionsBottomSheet(
             allowPartialDuringOpen || target != SheetValue.PartiallyExpanded
         }
     )
+    var currentPage by remember { mutableStateOf(PageActionsPage.MAIN) }
     val clipboard = LocalClipboard.current
     val coroutineScope = rememberCoroutineScope()
     val haptic = LocalHapticFeedback.current
@@ -141,90 +159,152 @@ fun PageActionsBottomSheet(
                 }
         }
 
-        Column(
+        BackHandler(enabled = currentPage != PageActionsPage.MAIN) {
+            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+            currentPage = PageActionsPage.MAIN
+        }
+
+        AnimatedContent(
+            targetState = currentPage,
             modifier = Modifier
                 .fillMaxWidth()
-                .navigationBarsPadding()
-                .padding(horizontal = 16.dp)
-                .padding(bottom = 20.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            PageActionsTopBar(
-                displayDomain = displayDomain,
-                shareUrl = currentUrl,
-                showCopiedFeedback = showCopiedFeedback,
-                isPageLoading = isPageLoading,
-                canGoForward = canGoForward,
-                isQuicConnection = isQuicConnection,
-                onCopyUrlClick = copyCurrentUrl,
-                onReloadOrStopClick = {
-                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                    if (isPageLoading) onStopLoadingClick() else onRefreshClick()
-                    onDismissRequest()
-                },
-                onForwardClick = {
-                    if (canGoForward) {
-                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                        onForwardClick()
-                        onDismissRequest()
+                .animateContentSize(
+                    animationSpec = tween(durationMillis = 220, easing = FastOutSlowInEasing)
+                ),
+            transitionSpec = {
+                val movingForward = targetState.ordinal > initialState.ordinal
+                val slideIn = slideInHorizontally(
+                    animationSpec = tween(durationMillis = 220, easing = FastOutSlowInEasing)
+                ) { fullWidth ->
+                    if (movingForward) fullWidth / 4 else -fullWidth / 4
+                } + fadeIn(animationSpec = tween(durationMillis = 180))
+
+                val slideOut = slideOutHorizontally(
+                    animationSpec = tween(durationMillis = 180, easing = FastOutSlowInEasing)
+                ) { fullWidth ->
+                    if (movingForward) -fullWidth / 4 else fullWidth / 4
+                } + fadeOut(animationSpec = tween(durationMillis = 140))
+
+                slideIn togetherWith slideOut
+            },
+            label = "pageActionsSheetPage"
+        ) { page ->
+            when (page) {
+                PageActionsPage.MAIN -> {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .navigationBarsPadding()
+                            .padding(horizontal = 16.dp)
+                            .padding(bottom = 20.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        PageActionsTopBar(
+                            displayDomain = displayDomain,
+                            shareUrl = currentUrl,
+                            showCopiedFeedback = showCopiedFeedback,
+                            isPageLoading = isPageLoading,
+                            canGoForward = canGoForward,
+                            isQuicConnection = isQuicConnection,
+                            onCopyUrlClick = copyCurrentUrl,
+                            onReloadOrStopClick = {
+                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                if (isPageLoading) onStopLoadingClick() else onRefreshClick()
+                                onDismissRequest()
+                            },
+                            onForwardClick = {
+                                if (canGoForward) {
+                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    onForwardClick()
+                                    onDismissRequest()
+                                }
+                            }
+                        )
+
+                        PageActionsMiddleSections(
+                            isTranslated = isTranslated,
+                            translateLanguage = translateLanguage,
+                            onTranslateToggle = { checked ->
+                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                if (checked && translateLanguage.equals("English", ignoreCase = true)) {
+                                    currentPage = PageActionsPage.TRANSLATE
+                                } else {
+                                    onTranslateToggle(checked)
+                                }
+                            },
+                            onTranslateSettingsClick = {
+                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                onTranslateSettingsClick()
+                                currentPage = PageActionsPage.TRANSLATE
+                            },
+                            onSiteControlsClick = {
+                                onDismissRequest()
+                                onSiteControlsClick()
+                            },
+                            onFindOnPageClick = {
+                                onDismissRequest()
+                                onFindOnPageClick()
+                            },
+                            onDownloadsClick = {
+                                onDismissRequest()
+                                onDownloadsClick()
+                            },
+                            onZoomClick = {
+                                onDismissRequest()
+                                onZoomClick()
+                            }
+                        )
+
+                        PageActionsBottomControls(
+                            isShieldEnabled = isShieldEnabled,
+                            adBlockMode = adBlockMode,
+                            isBookmarked = isBookmarked,
+                            isDesktopSite = isDesktopSite,
+                            isReaderMode = isReaderMode,
+                            onNewTabClick = {
+                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                onDismissRequest()
+                                onNewTabClick()
+                            },
+                            onShieldToggle = {
+                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                onShieldToggle()
+                            },
+                            onBookmarkToggle = {
+                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                onBookmarkToggle(!isBookmarked)
+                            },
+                            onDesktopSiteToggle = {
+                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                onDesktopSiteToggle(!isDesktopSite)
+                            },
+                            onReaderModeToggle = {
+                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                onReaderModeToggle(!isReaderMode)
+                            }
+                        )
                     }
                 }
-            )
 
-            PageActionsMiddleSections(
-                isTranslated = isTranslated,
-                translateLanguage = translateLanguage,
-                onTranslateToggle = { checked ->
-                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                    onTranslateToggle(checked)
-                },
-                onTranslateSettingsClick = onTranslateSettingsClick,
-                onSiteControlsClick = {
-                    onDismissRequest()
-                    onSiteControlsClick()
-                },
-                onFindOnPageClick = {
-                    onDismissRequest()
-                    onFindOnPageClick()
-                },
-                onDownloadsClick = {
-                    onDismissRequest()
-                    onDownloadsClick()
-                },
-                onZoomClick = {
-                    onDismissRequest()
-                    onZoomClick()
+                PageActionsPage.TRANSLATE -> {
+                    PageActionsTranslatePage(
+                        isTranslated = isTranslated,
+                        selectedLanguage = translateLanguage,
+                        onBackClick = {
+                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            currentPage = PageActionsPage.MAIN
+                        },
+                        onTranslateToggle = { checked ->
+                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            onTranslateToggle(checked)
+                        },
+                        onLanguageSelected = { option ->
+                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            onTranslateLanguageSelected(option.displayName)
+                        }
+                    )
                 }
-            )
-
-            PageActionsBottomControls(
-                isShieldEnabled = isShieldEnabled,
-                adBlockMode = adBlockMode,
-                isBookmarked = isBookmarked,
-                isDesktopSite = isDesktopSite,
-                isReaderMode = isReaderMode,
-                onNewTabClick = {
-                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                    onDismissRequest()
-                    onNewTabClick()
-                },
-                onShieldToggle = {
-                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                    onShieldToggle()
-                },
-                onBookmarkToggle = {
-                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                    onBookmarkToggle(!isBookmarked)
-                },
-                onDesktopSiteToggle = {
-                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                    onDesktopSiteToggle(!isDesktopSite)
-                },
-                onReaderModeToggle = {
-                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                    onReaderModeToggle(!isReaderMode)
-                }
-            )
+            }
         }
     }
 }

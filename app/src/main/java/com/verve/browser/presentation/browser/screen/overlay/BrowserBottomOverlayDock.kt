@@ -32,6 +32,7 @@ import com.verve.browser.presentation.browser.components.searchpill.BlankTabQuic
 import com.verve.browser.presentation.browser.components.searchpill.ExpressiveBottomToolbar
 import com.verve.browser.presentation.browser.components.searchpill.SearchSuggestionsList
 import com.verve.browser.presentation.browser.components.searchpill.pageactions.PageZoomBottomBar
+import com.verve.browser.presentation.browser.util.ReaderModeManager
 import com.verve.browser.presentation.browser.util.TabThumbnailCache
 import com.verve.browser.presentation.browser.util.TabWebViewPool
 
@@ -164,6 +165,7 @@ internal fun BoxScope.BrowserBottomOverlayDock(
                 findTotalMatches = overlayState.findTotalMatches,
                 isPageLoading = uiState.isLoading,
                 isIncognito = uiState.isIncognito,
+                isReaderMode = overlayState.isReaderMode,
                 canSwipeToLeftTab = leftTab != null,
                 canSwipeToRightTab = rightTab != null,
                 bottomWindowInsets = bottomNavInsets,
@@ -214,7 +216,13 @@ internal fun BoxScope.BrowserBottomOverlayDock(
                     overlayState.isSiteControlsSheetOpen = true
                     onSiteControlsClick()
                 },
+                onExitReaderModeClick = {
+                    focusManager.clearFocus()
+                    webViewRef?.let { ReaderModeManager.disable(it) }
+                    overlayState.isReaderMode = false
+                },
                 onRefreshClick = {
+                    overlayState.isReaderMode = false
                     webViewRef?.reload()
                 },
                 onStopLoadingClick = {

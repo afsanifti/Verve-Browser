@@ -4,14 +4,17 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import com.composables.icons.materialsymbols.MaterialSymbols
 import com.composables.icons.materialsymbols.rounded.Arrow_right
 import com.composables.icons.materialsymbols.rounded.Close
+import com.composables.icons.materialsymbols.rounded.Description
 import com.composables.icons.materialsymbols.rounded.Keyboard_arrow_down
 import com.composables.icons.materialsymbols.rounded.Keyboard_arrow_up
 import com.composables.icons.materialsymbols.rounded.Refresh
 import com.composables.icons.materialsymbols.rounded.Search
+import com.composables.icons.materialsymbols.roundedfilled.Description
 
 internal object SearchPillSymbols {
     val Search: ImageVector get() = MaterialSymbols.Rounded.Search
     val Close: ImageVector get() = MaterialSymbols.Rounded.Close
+    val Description: ImageVector get() = MaterialSymbols.RoundedFilled.Description
     val Refresh: ImageVector get() = MaterialSymbols.Rounded.Refresh
     val KeyboardArrowUp: ImageVector get() = MaterialSymbols.Rounded.Keyboard_arrow_up
     val KeyboardArrowDown: ImageVector get() = MaterialSymbols.Rounded.Keyboard_arrow_down

@@ -19,6 +19,8 @@ import com.verve.browser.data.download.VerveDownloadManager
 import com.verve.browser.data.network.QuicNetworkManager
 import com.verve.browser.presentation.browser.BrowserUiState
 import com.verve.browser.presentation.browser.BrowserViewModel
+import com.verve.browser.presentation.browser.util.PageTranslationManager
+import com.verve.browser.presentation.browser.util.ReaderModeManager
 import com.verve.browser.presentation.downloads.DownloadItem
 import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.delay
@@ -34,6 +36,7 @@ internal class BrowserOverlayState(
     var currentWebView by mutableStateOf<WebView?>(null)
 
     var isPageActionsSheetOpen by mutableStateOf(false)
+    var isTranslateLanguageSheetOpen by mutableStateOf(false)
     var isSiteControlsSheetOpen by mutableStateOf(false)
     var isDownloadsScreenOpen by mutableStateOf(false)
 
@@ -138,11 +141,20 @@ internal fun rememberBrowserOverlayState(
 
     // Reset per-tab / per-URL transient flags
     LaunchedEffect(uiState.activeTabId, uiState.currentUrl) {
+        PageTranslationManager.cancel(webViewRef)
         state.isQuicConnection = false
         state.isTranslated = false
         state.isReaderMode = false
         state.isSiteControlsSheetOpen = false
+        state.isTranslateLanguageSheetOpen = false
         state.isShieldEnabled = !viewModel.isSiteWhitelisted(uiState.currentUrl)
+    }
+    LaunchedEffect(uiState.isLoading) {
+        if (uiState.isLoading) {
+            PageTranslationManager.cancel(webViewRef)
+            state.isTranslated = false
+            state.isReaderMode = false
+        }
     }
     LaunchedEffect(uiState.currentUrl) {
         state.isBookmarked = false
@@ -171,6 +183,15 @@ internal fun rememberBrowserOverlayState(
     BackHandler(enabled = state.isFindInPageVisible && !state.isDownloadsScreenOpen) {
         focusManager.clearFocus()
         state.closeFindInPage()
+    }
+
+    BackHandler(
+        enabled = state.isReaderMode &&
+                !state.isDownloadsScreenOpen &&
+                !state.isFindInPageVisible
+    ) {
+        webViewRef?.let { ReaderModeManager.disable(it) }
+        state.isReaderMode = false
     }
 
     LaunchedEffect(Unit) {
