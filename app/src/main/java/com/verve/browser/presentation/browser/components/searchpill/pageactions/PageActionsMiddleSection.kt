@@ -56,8 +56,8 @@ internal fun PageActionsMiddleSections(
         containerColor = MaterialTheme.colorScheme.surfaceContainerHighest
     )
 
-    val isSourceLanguage = translateLanguage.equals(sourceLanguage, ignoreCase = true)
-    val effectiveTranslated = isTranslated && !isSourceLanguage
+    val isSameAsSource = translateLanguage.equals(sourceLanguage, ignoreCase = true)
+    val effectiveTranslated = isTranslated && !isSameAsSource
 
     val actionItems = listOf(
         Triple(painterResource(id = R.drawable.ic_siteinfo), "Site controls", onSiteControlsClick),
@@ -153,7 +153,7 @@ internal fun PageActionsMiddleSections(
                 Switch(
                     checked = effectiveTranslated,
                     onCheckedChange = { enabled ->
-                        if (enabled && isSourceLanguage) {
+                        if (enabled && isSameAsSource) {
                             onTranslateSettingsClick()
                         } else {
                             onTranslateToggle(enabled)

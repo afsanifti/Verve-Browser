@@ -68,6 +68,92 @@ internal object PageTranslationManager {
         }?.code ?: "en"
     }
 
+    fun resolveLanguageDisplayName(rawCode: String?): String? {
+        val cleaned = rawCode?.trim()?.lowercase()?.replace('_', '-') ?: return null
+        if (cleaned.isBlank() || cleaned == "und" || cleaned == "auto") return null
+        supportedLanguages.firstOrNull { it.code.equals(cleaned, ignoreCase = true) }?.let {
+            return it.displayName
+        }
+        val primarySubtag = cleaned.substringBefore('-')
+        return supportedLanguages.firstOrNull {
+            it.code.substringBefore('-').equals(primarySubtag, ignoreCase = true)
+        }?.displayName
+    }
+
+    fun detectPageLanguage(
+        webView: WebView,
+        onDetected: (detectedLanguageName: String?) -> Unit
+    ) {
+        val script = """
+            (function() {
+                var htmlLang = (document.documentElement && document.documentElement.lang) || '';
+                var metaLang = '';
+                var meta = document.querySelector('meta[http-equiv="content-language" i], meta[name="language" i]');
+                if (meta && meta.content) metaLang = meta.content.split(',')[0].trim();
+                var sample = ((document.title || '') + ' ' + ((document.body && document.body.innerText) || '').slice(0, 600)).trim();
+                return JSON.stringify({ htmlLang: htmlLang, metaLang: metaLang, sample: sample });
+            })();
+        """.trimIndent()
+
+        webView.evaluateJavascript(script) { raw ->
+            val jsonStr = decodeJsJsonString(raw)
+            if (jsonStr.isNullOrBlank()) {
+                onDetected(null)
+                return@evaluateJavascript
+            }
+            val obj = runCatching { JSONObject(jsonStr) }.getOrNull()
+            if (obj == null) {
+                onDetected(null)
+                return@evaluateJavascript
+            }
+
+            val explicit = resolveLanguageDisplayName(obj.optString("htmlLang"))
+                ?: resolveLanguageDisplayName(obj.optString("metaLang"))
+            if (explicit != null) {
+                onDetected(explicit)
+                return@evaluateJavascript
+            }
+
+            val sample = obj.optString("sample")
+            onDetected(detectByUnicodeScript(sample))
+        }
+    }
+
+    private fun detectByUnicodeScript(sample: String): String? {
+        if (sample.length < 12) return null
+        var bn = 0
+        var hi = 0
+        var ar = 0
+        var ja = 0
+        var ko = 0
+        var zh = 0
+        var ru = 0
+        var th = 0
+        for (ch in sample) {
+            when (ch.code) {
+                in 0x0980..0x09FF -> bn++
+                in 0x0900..0x097F -> hi++
+                in 0x0600..0x06FF -> ar++
+                in 0x3040..0x30FF -> ja++
+                in 0xAC00..0xD7AF -> ko++
+                in 0x4E00..0x9FFF -> zh++
+                in 0x0400..0x04FF -> ru++
+                in 0x0E00..0x0E7F -> th++
+            }
+        }
+        val top = listOf(
+            "Bengali" to bn,
+            "Hindi" to hi,
+            "Arabic" to ar,
+            "Japanese" to ja,
+            "Korean" to ko,
+            "Chinese (Simplified)" to zh,
+            "Russian" to ru,
+            "Thai" to th
+        ).maxByOrNull { it.second } ?: return null
+        return if (top.second >= 6) top.first else null
+    }
+
     fun cancel(webView: WebView?) {
         val key = webView?.hashCode() ?: return
         activeJobs.remove(key)?.cancel()
@@ -96,7 +182,6 @@ internal object PageTranslationManager {
                 val textsArray = payload.optJSONArray("texts") ?: JSONArray()
                 val priorityArray = payload.optJSONArray("priorityOrder") ?: JSONArray()
 
-                // Collect unique strings in viewport-first priority order so visible text translates first
                 val uniqueTexts = LinkedHashSet<String>()
                 if (title.isNotBlank()) uniqueTexts.add(title)
 
@@ -151,7 +236,6 @@ internal object PageTranslationManager {
                             }
                         }
 
-                        // Apply the first (in-viewport) batch immediately as soon as it arrives
                         deferredBatches.firstOrNull()?.await()
                         if (resolvedMap.isNotEmpty()) {
                             withContext(Dispatchers.Main.immediate) {
@@ -160,7 +244,6 @@ internal object PageTranslationManager {
                             }
                         }
 
-                        // Finish remaining off-screen batches in parallel and patch the rest of the DOM
                         if (deferredBatches.size > 1) {
                             deferredBatches.drop(1).awaitAll()
                             if (resolvedMap.isNotEmpty()) {
@@ -317,7 +400,6 @@ internal object PageTranslationManager {
             missingIndices.addAll(batch.indices)
         }
 
-        // Only translate any unmatched items, and do them concurrently
         if (missingIndices.isNotEmpty()) {
             coroutineScope {
                 missingIndices.map { idx ->

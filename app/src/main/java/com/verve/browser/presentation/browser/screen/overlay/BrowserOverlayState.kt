@@ -17,6 +17,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import com.verve.browser.data.download.VerveDownloadManager
 import com.verve.browser.data.network.QuicNetworkManager
+import com.verve.browser.data.preferences.LanguagePreferences
 import com.verve.browser.presentation.browser.BrowserUiState
 import com.verve.browser.presentation.browser.BrowserViewModel
 import com.verve.browser.presentation.browser.util.PageTranslationManager
@@ -27,10 +28,11 @@ import kotlinx.coroutines.delay
 
 internal val ZoomBarAutoDismissDuration = 3.5.seconds
 internal val DownloadSnackbarDuration = 4.seconds
+internal val TranslateSnackbarDuration = 5.seconds
 
 @Stable
 internal class BrowserOverlayState(
-    initialTranslateLanguage: String = "English",
+    initialTranslateLanguage: String = LanguagePreferences.FALLBACK_LANGUAGE,
     initialShieldEnabled: Boolean = true
 ) {
     var currentWebView by mutableStateOf<WebView?>(null)
@@ -44,6 +46,16 @@ internal class BrowserOverlayState(
     var activeBannerDownloadId by mutableStateOf<String?>(null)
     var bannerDisplayTick by mutableIntStateOf(0)
     var activeBannerItem by mutableStateOf<DownloadItem?>(null)
+
+    // Top language prompt & confirmation snackbar state
+    var defaultLanguage by mutableStateOf(initialTranslateLanguage)
+    var detectedPageLanguage by mutableStateOf<String?>(null)
+    var isTranslatePromptVisible by mutableStateOf(false)
+    val dismissedPromptUrls = mutableStateMapOf<String, Boolean>()
+
+    var translatedBannerLanguage by mutableStateOf<String?>(null)
+    var previousLanguageBeforeTranslate by mutableStateOf<String?>(null)
+    var translatedBannerTick by mutableIntStateOf(0)
 
     // QUIC / HTTP/3 state
     var isQuicEnabled by mutableStateOf(false)
@@ -68,6 +80,20 @@ internal class BrowserOverlayState(
     var isBookmarked by mutableStateOf(false)
     var isDesktopSite by mutableStateOf(false)
     var isReaderMode by mutableStateOf(false)
+
+    fun showTranslatedBanner(newLanguage: String, previousLanguage: String?) {
+        isTranslatePromptVisible = false
+        previousLanguageBeforeTranslate = previousLanguage
+        translatedBannerLanguage = newLanguage
+        translatedBannerTick++
+    }
+
+    fun dismissTranslatePrompt(rememberForUrl: String? = null) {
+        isTranslatePromptVisible = false
+        if (!rememberForUrl.isNullOrBlank()) {
+            dismissedPromptUrls[rememberForUrl] = true
+        }
+    }
 
     fun zoomPercentFor(tabId: String): Int = tabZoomLevels[tabId] ?: 100
 
@@ -114,7 +140,7 @@ internal fun rememberBrowserOverlayState(
     val focusManager = LocalFocusManager.current
 
     var savedDownloadsOpen by rememberSaveable { mutableStateOf(false) }
-    var savedTranslateLanguage by rememberSaveable { mutableStateOf("English") }
+    var savedTranslateLanguage by rememberSaveable { mutableStateOf(LanguagePreferences.defaultLanguage.value) }
     var savedShieldEnabled by rememberSaveable { mutableStateOf(true) }
 
     val state = remember {
@@ -127,6 +153,23 @@ internal fun rememberBrowserOverlayState(
     }
 
     state.currentWebView = webViewRef
+
+    LaunchedEffect(Unit) {
+        QuicNetworkManager.initialize(context)
+        LanguagePreferences.initialize(context)
+    }
+
+    val defaultLanguage by LanguagePreferences.defaultLanguage.collectAsState()
+    val offerToTranslate by LanguagePreferences.offerToTranslate.collectAsState()
+    val autoTranslateLanguages by LanguagePreferences.autoTranslateLanguages.collectAsState()
+    val neverTranslateLanguages by LanguagePreferences.neverTranslateLanguages.collectAsState()
+
+    LaunchedEffect(defaultLanguage) {
+        state.defaultLanguage = defaultLanguage
+        if (!state.isTranslated) {
+            state.translateLanguage = defaultLanguage
+        }
+    }
 
     // Keep saveable mirrors synchronized
     LaunchedEffect(state.isDownloadsScreenOpen) {
@@ -144,6 +187,11 @@ internal fun rememberBrowserOverlayState(
         PageTranslationManager.cancel(webViewRef)
         state.isQuicConnection = false
         state.isTranslated = false
+        state.translateLanguage = state.defaultLanguage
+        state.isTranslatePromptVisible = false
+        state.detectedPageLanguage = null
+        state.translatedBannerLanguage = null
+        state.previousLanguageBeforeTranslate = null
         state.isReaderMode = false
         state.isSiteControlsSheetOpen = false
         state.isTranslateLanguageSheetOpen = false
@@ -153,6 +201,8 @@ internal fun rememberBrowserOverlayState(
         if (uiState.isLoading) {
             PageTranslationManager.cancel(webViewRef)
             state.isTranslated = false
+            state.isTranslatePromptVisible = false
+            state.translatedBannerLanguage = null
             state.isReaderMode = false
         }
     }
@@ -163,6 +213,72 @@ internal fun rememberBrowserOverlayState(
         state.isDesktopSite = false
         if (state.isFindInPageVisible) {
             state.closeFindInPage()
+        }
+    }
+
+    // Reconfigured language detection & auto-translate / prompt rules
+    LaunchedEffect(
+        webViewRef,
+        uiState.activeTabId,
+        uiState.currentUrl,
+        uiState.isLoading,
+        defaultLanguage,
+        offerToTranslate,
+        autoTranslateLanguages,
+        neverTranslateLanguages
+    ) {
+        val activeWebView = webViewRef ?: return@LaunchedEffect
+        val url = uiState.currentUrl
+        if (uiState.isLoading || !isOnWebPage || url.isBlank() || state.isTranslated) return@LaunchedEffect
+
+        PageTranslationManager.detectPageLanguage(activeWebView) { detected ->
+            if (detected.isNullOrBlank()) return@detectPageLanguage
+            state.detectedPageLanguage = detected
+
+            // Already in target language
+            if (detected.equals(defaultLanguage, ignoreCase = true)) return@detectPageLanguage
+
+            // 1. "Automatically translate these languages" takes priority
+            val shouldAutoTranslate = autoTranslateLanguages.any {
+                it.equals(detected, ignoreCase = true)
+            }
+            if (shouldAutoTranslate) {
+                state.translateLanguage = defaultLanguage
+                state.isTranslated = true
+                PageTranslationManager.translatePage(
+                    webView = activeWebView,
+                    targetLanguageName = defaultLanguage
+                ) { success ->
+                    state.isTranslated = success
+                    if (success) {
+                        state.showTranslatedBanner(
+                            newLanguage = defaultLanguage,
+                            previousLanguage = null
+                        )
+                    }
+                }
+                return@detectPageLanguage
+            }
+
+            // 2. Check master toggle + "Don't offer to translate these languages"
+            val isBlockedByNeverList = neverTranslateLanguages.any {
+                it.equals(detected, ignoreCase = true)
+            }
+            if (
+                offerToTranslate &&
+                !isBlockedByNeverList &&
+                state.dismissedPromptUrls[url] != true
+            ) {
+                state.isTranslatePromptVisible = true
+            }
+        }
+    }
+
+    // Auto-dismiss "Language changed / Undo" banner after 5 seconds
+    LaunchedEffect(state.translatedBannerLanguage, state.translatedBannerTick) {
+        if (state.translatedBannerLanguage != null) {
+            delay(TranslateSnackbarDuration)
+            state.translatedBannerLanguage = null
         }
     }
 
@@ -192,10 +308,6 @@ internal fun rememberBrowserOverlayState(
     ) {
         webViewRef?.let { ReaderModeManager.disable(it) }
         state.isReaderMode = false
-    }
-
-    LaunchedEffect(Unit) {
-        QuicNetworkManager.initialize(context)
     }
 
     // Show top download snackbar whenever a new file download starts

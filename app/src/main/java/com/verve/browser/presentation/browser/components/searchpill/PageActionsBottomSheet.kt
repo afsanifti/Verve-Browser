@@ -65,6 +65,7 @@ fun PageActionsBottomSheet(
     canGoForward: Boolean,
     isTranslated: Boolean,
     translateLanguage: String,
+    sourceLanguage: String = "English",
     isShieldEnabled: Boolean,
     isBookmarked: Boolean,
     isDesktopSite: Boolean,
@@ -224,9 +225,10 @@ fun PageActionsBottomSheet(
                         PageActionsMiddleSections(
                             isTranslated = isTranslated,
                             translateLanguage = translateLanguage,
+                            sourceLanguage = sourceLanguage,
                             onTranslateToggle = { checked ->
                                 haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                if (checked && translateLanguage.equals("English", ignoreCase = true)) {
+                                if (checked && translateLanguage.equals(sourceLanguage, ignoreCase = true)) {
                                     currentPage = PageActionsPage.TRANSLATE
                                 } else {
                                     onTranslateToggle(checked)
@@ -290,6 +292,7 @@ fun PageActionsBottomSheet(
                     PageActionsTranslatePage(
                         isTranslated = isTranslated,
                         selectedLanguage = translateLanguage,
+                        sourceLanguage = sourceLanguage,
                         onBackClick = {
                             haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                             currentPage = PageActionsPage.MAIN

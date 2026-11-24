@@ -20,6 +20,7 @@ import androidx.compose.ui.platform.LocalContext
 import com.verve.browser.domain.model.AdBlockMode
 import com.verve.browser.presentation.browser.BrowserUiState
 import com.verve.browser.presentation.browser.BrowserViewModel
+import com.verve.browser.presentation.browser.components.TopTranslateBanner
 import com.verve.browser.presentation.browser.components.searchpill.PageActionsBottomSheet
 import com.verve.browser.presentation.browser.components.searchpill.pageactions.SiteControlsBottomSheet
 import com.verve.browser.presentation.browser.util.PageTranslationManager
@@ -67,23 +68,33 @@ internal fun BrowserOverlayModals(
         }
     }
 
-    val runPageTranslation: (String) -> Unit = { targetLanguage ->
+    val effectiveSourceLanguage = overlayState.detectedPageLanguage ?: "English"
+
+    val runPageTranslation: (String, Boolean) -> Unit = { targetLanguage, showUndoBanner ->
         val activeWebView = webViewRef
-        if (
-            activeWebView == null ||
-            uiState.currentUrl.isBlank() ||
-            targetLanguage.equals("English", ignoreCase = true)
-        ) {
+        val previousLang = if (overlayState.isTranslated) overlayState.translateLanguage else null
+        val isOriginalPageLanguage = targetLanguage.equals(effectiveSourceLanguage, ignoreCase = true)
+
+        if (activeWebView == null || uiState.currentUrl.isBlank() || isOriginalPageLanguage) {
             activeWebView?.let { PageTranslationManager.restore(it) }
             overlayState.isTranslated = false
+            overlayState.translatedBannerLanguage = null
         } else {
+            overlayState.translateLanguage = targetLanguage
             overlayState.isTranslated = true
             PageTranslationManager.translatePage(
                 webView = activeWebView,
                 targetLanguageName = targetLanguage
             ) { success ->
                 overlayState.isTranslated = success
-                if (!success) {
+                if (success) {
+                    if (showUndoBanner) {
+                        overlayState.showTranslatedBanner(
+                            newLanguage = targetLanguage,
+                            previousLanguage = previousLang
+                        )
+                    }
+                } else {
                     Toast.makeText(
                         context,
                         "Unable to translate this page",
@@ -93,6 +104,39 @@ internal fun BrowserOverlayModals(
             }
         }
     }
+
+    // Top language prompt & "Language changed • Undo" popup
+    TopTranslateBanner(
+        isPromptVisible = overlayState.isTranslatePromptVisible && overlayState.activeBannerItem == null,
+        detectedLanguage = overlayState.detectedPageLanguage,
+        defaultLanguage = overlayState.defaultLanguage,
+        translatedLanguage = if (overlayState.activeBannerItem == null) {
+            overlayState.translatedBannerLanguage
+        } else {
+            null
+        },
+        onTranslateToDefaultClick = {
+            overlayState.dismissTranslatePrompt(uiState.currentUrl)
+            runPageTranslation(overlayState.defaultLanguage, true)
+        },
+        onDismissPromptClick = {
+            overlayState.dismissTranslatePrompt(uiState.currentUrl)
+        },
+        onUndoTranslationClick = {
+            val prev = overlayState.previousLanguageBeforeTranslate
+            overlayState.translatedBannerLanguage = null
+            if (!prev.isNullOrBlank()) {
+                runPageTranslation(prev, false)
+            } else {
+                webViewRef?.let { PageTranslationManager.restore(it) }
+                overlayState.isTranslated = false
+                overlayState.translateLanguage = overlayState.defaultLanguage
+            }
+        },
+        onDismissTranslatedClick = {
+            overlayState.translatedBannerLanguage = null
+        }
+    )
 
     // Binary On/Off toggle used by the Switch inside SiteControlsBottomSheet
     val toggleCurrentSiteShield: () -> Unit = {
@@ -110,7 +154,6 @@ internal fun BrowserOverlayModals(
     val cycleCurrentSiteShield: () -> Unit = {
         val url = uiState.currentUrl
         when {
-            // 1. Off (Outline) -> Standard (Filled)
             !overlayState.isShieldEnabled -> {
                 if (adBlockMode != AdBlockMode.STANDARD) {
                     isQuickCyclingMode = true
@@ -124,7 +167,6 @@ internal fun BrowserOverlayModals(
                     overlayState.isShieldEnabled = true
                 }
             }
-            // 2. Standard (Filled) -> Aggressive (Encrypt, stays on)
             adBlockMode == AdBlockMode.STANDARD -> {
                 isQuickCyclingMode = true
                 viewModel.setAdBlockMode(AdBlockMode.AGGRESSIVE)
@@ -132,7 +174,6 @@ internal fun BrowserOverlayModals(
                     webViewRef?.reload()
                 }
             }
-            // 3. Aggressive (Encrypt) -> Off (Outline)
             else -> {
                 if (url.isNotBlank()) {
                     val nowWhitelisted = viewModel.toggleSiteWhitelist(url)
@@ -152,6 +193,7 @@ internal fun BrowserOverlayModals(
             canGoForward = uiState.activeTab?.canGoForward == true || (webViewRef?.canGoForward() == true),
             isTranslated = overlayState.isTranslated,
             translateLanguage = overlayState.translateLanguage,
+            sourceLanguage = effectiveSourceLanguage,
             isShieldEnabled = overlayState.isShieldEnabled,
             adBlockMode = adBlockMode,
             isBookmarked = overlayState.isBookmarked,
@@ -162,6 +204,7 @@ internal fun BrowserOverlayModals(
             onRefreshClick = {
                 overlayState.isReaderMode = false
                 overlayState.isTranslated = false
+                overlayState.translatedBannerLanguage = null
                 webViewRef?.reload()
             },
             onStopLoadingClick = {
@@ -175,22 +218,25 @@ internal fun BrowserOverlayModals(
                 }
             },
             onTranslateToggle = { enabled ->
-                if (enabled && !overlayState.translateLanguage.equals("English", ignoreCase = true)) {
+                if (enabled) {
                     overlayState.isPageActionsSheetOpen = false
-                    runPageTranslation(overlayState.translateLanguage)
+                    runPageTranslation(overlayState.translateLanguage, true)
                 } else {
                     webViewRef?.let { PageTranslationManager.restore(it) }
                     overlayState.isTranslated = false
+                    overlayState.translatedBannerLanguage = null
                 }
             },
             onTranslateLanguageSelected = { selectedLanguage ->
                 overlayState.translateLanguage = selectedLanguage
-                if (selectedLanguage.equals("English", ignoreCase = true)) {
+                if (selectedLanguage.equals(effectiveSourceLanguage, ignoreCase = true)) {
                     webViewRef?.let { PageTranslationManager.restore(it) }
                     overlayState.isTranslated = false
+                    overlayState.translatedBannerLanguage = null
+                    overlayState.isPageActionsSheetOpen = false
                 } else {
                     overlayState.isPageActionsSheetOpen = false
-                    runPageTranslation(selectedLanguage)
+                    runPageTranslation(selectedLanguage, true)
                 }
             },
             onSiteControlsClick = {

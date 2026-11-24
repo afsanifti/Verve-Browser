@@ -14,6 +14,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalContext
+import com.verve.browser.data.preferences.LanguagePreferences
 import com.verve.browser.domain.model.AdBlockMode
 import com.verve.browser.presentation.downloads.DownloadsRoute
 import com.verve.browser.presentation.update.AppUpdateController
@@ -21,6 +23,7 @@ import com.verve.browser.presentation.update.AppUpdateController
 private enum class SettingsDestination {
     MAIN,
     PRIVACY_SECURITY,
+    LANGUAGES,
     THEME,
     DOWNLOADS,
     ABOUT_VERVE
@@ -37,6 +40,7 @@ fun SettingsFlow(
     onAutoStartUpdateHandled: () -> Unit = {},
     onOpenUrl: (String) -> Unit = {}
 ) {
+    val context = LocalContext.current
     var destination by remember {
         mutableStateOf(
             if (openAboutVerveDirectly) {
@@ -47,6 +51,11 @@ fun SettingsFlow(
         )
     }
     val updateState by updateController.uiState.collectAsState()
+    val defaultLanguage by LanguagePreferences.defaultLanguage.collectAsState()
+
+    LaunchedEffect(Unit) {
+        LanguagePreferences.initialize(context)
+    }
 
     BackHandler {
         if (destination != SettingsDestination.MAIN) {
@@ -74,8 +83,10 @@ fun SettingsFlow(
                 SettingsScreen(
                     hasUpdateAvailable = updateState.availableUpdate != null,
                     adBlockMode = adBlockMode,
+                    defaultLanguage = defaultLanguage,
                     onNavigateBack = onExitSettings,
                     onOpenPrivacySecurity = { destination = SettingsDestination.PRIVACY_SECURITY },
+                    onOpenLanguages = { destination = SettingsDestination.LANGUAGES },
                     onOpenTheme = { destination = SettingsDestination.THEME },
                     onOpenDownloads = { destination = SettingsDestination.DOWNLOADS },
                     onOpenAboutVerve = { destination = SettingsDestination.ABOUT_VERVE }
@@ -85,6 +96,11 @@ fun SettingsFlow(
                 PrivacySecuritySettingsScreen(
                     adBlockMode = adBlockMode,
                     onSelectAdBlockMode = onSelectAdBlockMode,
+                    onNavigateBack = { destination = SettingsDestination.MAIN }
+                )
+            }
+            SettingsDestination.LANGUAGES -> {
+                LanguageSettingsScreen(
                     onNavigateBack = { destination = SettingsDestination.MAIN }
                 )
             }

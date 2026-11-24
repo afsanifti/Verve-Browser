@@ -49,8 +49,10 @@ import com.verve.browser.domain.model.AdBlockMode
 fun SettingsScreen(
     hasUpdateAvailable: Boolean,
     adBlockMode: AdBlockMode,
+    defaultLanguage: String,
     onNavigateBack: () -> Unit,
     onOpenPrivacySecurity: () -> Unit,
+    onOpenLanguages: () -> Unit,
     onOpenTheme: () -> Unit,
     onOpenDownloads: () -> Unit,
     onOpenAboutVerve: () -> Unit,
@@ -150,7 +152,6 @@ fun SettingsScreen(
             Spacer(modifier = Modifier.height(22.dp))
 
             // Browser Section
-            // Browser Section
             SettingsSectionLabel(text = "Browser")
             ExpressiveSegmentedGroup(
                 items = listOf(
@@ -166,6 +167,11 @@ fun SettingsScreen(
                     ExpressiveMenuItem(
                         title = "Search Engine",
                         subtitle = "Google"
+                    ),
+                    ExpressiveMenuItem(
+                        title = "Languages",
+                        subtitle = "Default • $defaultLanguage",
+                        onClick = onOpenLanguages
                     ),
                     ExpressiveMenuItem(
                         title = "Default Browser",

@@ -37,12 +37,13 @@ import com.verve.browser.presentation.browser.util.TranslateLanguageOption
 internal fun PageActionsTranslatePage(
     isTranslated: Boolean,
     selectedLanguage: String,
+    sourceLanguage: String = "English",
     onBackClick: () -> Unit,
     onTranslateToggle: (Boolean) -> Unit,
     onLanguageSelected: (TranslateLanguageOption) -> Unit
 ) {
-    val isEnglish = selectedLanguage.equals("English", ignoreCase = true)
-    val effectiveTranslated = isTranslated && !isEnglish
+    val isSameAsSource = selectedLanguage.equals(sourceLanguage, ignoreCase = true)
+    val effectiveTranslated = isTranslated && !isSameAsSource
 
     Column(
         modifier = Modifier

@@ -404,11 +404,12 @@ fun ExpressiveBottomToolbar(
         val leftCompressPx = leftCompressDp.roundToPx()
         val rightCompressPx = rightCompressDp.roundToPx()
 
-        val leftSlotPx = ((sideSlotFullPx - leftCompressPx) * effectiveLeftReserveFactor).roundToInt()
+        val leftReserveSlotPx = ((sideSlotFullPx - leftCompressPx) * effectiveLeftReserveFactor).roundToInt()
+        val leftSlotPx = ((sideSlotFullPx - leftCompressPx) * leftVisibility).roundToInt()
         val rightSlotPx = ((sideSlotFullPx - rightCompressPx) * rightVisibility).roundToInt()
 
         val collapsedPillWidthPx = collapsedPillWidth.roundToPx().coerceAtMost(maxWidthPx)
-        val expandedPillWidthPx = (maxWidthPx - leftSlotPx - rightSlotPx)
+        val expandedPillWidthPx = (maxWidthPx - leftReserveSlotPx - rightSlotPx)
             .coerceAtLeast(collapsedPillWidthPx)
         val pillWidthPx = lerp(collapsedPillWidthPx, expandedPillWidthPx, clampedExpand)
 
