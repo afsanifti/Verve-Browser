@@ -183,7 +183,7 @@ fun TopTranslateBanner(
                             color = MaterialTheme.colorScheme.onSurface,
                             style = MaterialTheme.typography.labelLarge.copy(
                                 fontSize = 14.sp,
-                                fontWeight = FontWeight.SemiBold
+                                fontWeight = FontWeight.Medium
                             ),
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
@@ -192,7 +192,8 @@ fun TopTranslateBanner(
                             text = "Translated to $translatedLanguage",
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             style = MaterialTheme.typography.bodySmall.copy(
-                                fontSize = 12.sp
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Normal
                             ),
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
