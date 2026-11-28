@@ -13,6 +13,7 @@ import androidx.compose.runtime.setValue
 import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
+import com.verve.browser.data.preferences.SearchEnginePreferences
 import com.verve.browser.data.update.UpdateCheckWorker
 import com.verve.browser.data.update.UpdateNotificationHelper
 import com.verve.browser.presentation.browser.BrowserScreen
@@ -27,6 +28,7 @@ class MainActivity : FragmentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         ThemePreferences.init(this)
+        SearchEnginePreferences.initialize(this)
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         window.isNavigationBarContrastEnforced = false
@@ -46,7 +48,8 @@ class MainActivity : FragmentActivity() {
             override fun <T : ViewModel> create(modelClass: Class<T>): T {
                 return BrowserViewModel(
                     shouldBlockUrlUseCase = app.shouldBlockUrlUseCase,
-                    tabSessionStorage = app.tabSessionStorage
+                    tabSessionStorage = app.tabSessionStorage,
+                    appContext = applicationContext
                 ) as T
             }
         }

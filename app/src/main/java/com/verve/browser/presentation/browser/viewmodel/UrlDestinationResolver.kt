@@ -1,6 +1,6 @@
 package com.verve.browser.presentation.browser.viewmodel
 
-import java.net.URLEncoder
+import com.verve.browser.data.preferences.SearchEnginePreferences
 
 internal object UrlDestinationResolver {
 
@@ -25,7 +25,7 @@ internal object UrlDestinationResolver {
         }
 
         if (input.any { it.isWhitespace() }) {
-            return buildGoogleSearchUrl(input)
+            return SearchEnginePreferences.buildSearchUrl(input)
         }
 
         if (DOMAIN_REGEX.matches(input)) {
@@ -36,11 +36,6 @@ internal object UrlDestinationResolver {
             return "http://$input"
         }
 
-        return buildGoogleSearchUrl(input)
-    }
-
-    private fun buildGoogleSearchUrl(query: String): String {
-        val encodedQuery = URLEncoder.encode(query, "UTF-8")
-        return "https://www.google.com/search?q=$encodedQuery"
+        return SearchEnginePreferences.buildSearchUrl(input)
     }
 }

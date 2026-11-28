@@ -1,13 +1,9 @@
-✨ What's New
+✨ **What's New**
 
-- **Reader Mode**: Distill articles into a clean, distraction-free reading layout styled with your Material 3 theme colors, complete with a quick-exit indicator in the search pill and system Back button support
-- **Built-In Page Translation & Language Preferences**:
-- Translate webpages in place via the Page Actions sheet with a full-height language picker, live source → target status (`English ↔ Spanish`), and instant restoration to the original page
-- Configure default target language, drag-to-reorder preferred website languages (`Accept-Language`), auto-translate rules, and "never translate" exclusions in **Settings → Languages**
-- Automatic prompt banner when visiting pages in foreign languages, with quick **Translate**, **Always translate**, and **Never translate** actions
-
-
-- **3-State Verve Shields**: Tap the shield quick toggle to cycle between **Off**, **Standard**, and **Aggressive** modes, while automatically defaulting to your Settings preference on new pages
-- **Smoother Toolbar Animations**: Eliminated layout jitter when collapsing and expanding the bottom toolbar, and centered the search pill on the New Tab screen
-- **Smarter Download Filtering**: Prevented silent background API and telemetry responses (such as `.json` and `sgasync`) from triggering unwanted automatic downloads
-- Stability and improvement on adblocker (including CNAME uncloaking startup fixes)
+* **Configurable Default Search Engine**: Choose from 10 popular search engines—including Google, Microsoft Bing, DuckDuckGo, Brave Search, Startpage, Ecosia, Qwant, Yahoo!, Yandex, and Kagi—with dedicated brand icons and matching search suggestions in **Settings → Search Engine**
+* **Search-Engine-Independent Incognito Mode**: Isolated cookie, storage, and profile sessions prevent regular-account logins from leaking to any search engine, while disabling local history, keyboard learning, and remote autocomplete suggestions until the last Incognito tab closes
+* **Persistent Download History**: Downloaded files now stay saved in the **Downloads** list across app restarts, with interrupted downloads automatically preserved so they can be resumed
+* **Reader Mode**: Clean, distraction-free article view styled with your Material 3 theme colors and a quick-exit badge in the search pill
+* **Built-In Page Translation & Language Preferences**: In-place webpage translation, automatic language detection prompts, and customizable preferred/auto-translate rules in **Settings → Languages**
+* **3-State Verve Shields**: Quick-cycle between **Off**, **Standard**, and **Aggressive** protection modes
+* **Performance & UI Polish**: Smoother jitter-free toolbar animations, centered New Tab search pill, smarter background download filtering, and adblocker stability fixes

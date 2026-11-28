@@ -3,6 +3,7 @@ package com.verve.browser
 import android.app.Application
 import com.verve.browser.core.adblock.NativeAdBlocker
 import com.verve.browser.data.adblock.AdBlockUpdateWorker
+import com.verve.browser.data.download.VerveDownloadManager
 import com.verve.browser.data.local.TabSessionStorage
 import com.verve.browser.data.repository.AdBlockRepositoryImpl
 import com.verve.browser.domain.repository.AdBlockRepository
@@ -32,6 +33,7 @@ class VerveApplication : Application() {
             return
         }
         ThemePreferences.init(this)
+        VerveDownloadManager.initialize(this)
 
         tabSessionStorage = TabSessionStorage(this)
 

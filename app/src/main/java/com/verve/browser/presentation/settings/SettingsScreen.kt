@@ -43,6 +43,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.verve.browser.data.network.QuicNetworkManager
+import com.verve.browser.data.preferences.SearchEnginePreferences
 import com.verve.browser.domain.model.AdBlockMode
 import com.verve.browser.presentation.browser.util.DefaultBrowserHelper
 import com.verve.browser.presentation.theme.rememberThemeConfig
@@ -54,6 +55,7 @@ fun SettingsScreen(
     defaultLanguage: String,
     onNavigateBack: () -> Unit,
     onOpenPrivacySecurity: () -> Unit,
+    onOpenSearchEngine: () -> Unit,
     onOpenLanguages: () -> Unit,
     onOpenTheme: () -> Unit,
     onOpenDownloads: () -> Unit,
@@ -65,6 +67,7 @@ fun SettingsScreen(
     val layoutDirection = LocalLayoutDirection.current
     val themeConfig = rememberThemeConfig()
     val isQuicEnabled by QuicNetworkManager.isQuicEnabled.collectAsState()
+    val selectedSearchEngine by SearchEnginePreferences.selectedEngine.collectAsState()
 
     var isDefaultBrowser by remember {
         mutableStateOf(DefaultBrowserHelper.isDefaultBrowser(context))
@@ -90,6 +93,7 @@ fun SettingsScreen(
 
     LaunchedEffect(Unit) {
         QuicNetworkManager.initialize(context)
+        SearchEnginePreferences.initialize(context)
     }
 
     Scaffold(
@@ -174,7 +178,8 @@ fun SettingsScreen(
                     ),
                     ExpressiveMenuItem(
                         title = "Search Engine",
-                        subtitle = "Google"
+                        subtitle = selectedSearchEngine.name,
+                        onClick = onOpenSearchEngine
                     ),
                     ExpressiveMenuItem(
                         title = "Languages",

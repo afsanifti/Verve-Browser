@@ -16,6 +16,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import com.verve.browser.data.preferences.LanguagePreferences
+import com.verve.browser.data.preferences.SearchEnginePreferences
 import com.verve.browser.domain.model.AdBlockMode
 import com.verve.browser.presentation.downloads.DownloadsRoute
 import com.verve.browser.presentation.update.AppUpdateController
@@ -23,6 +24,7 @@ import com.verve.browser.presentation.update.AppUpdateController
 private enum class SettingsDestination {
     MAIN,
     PRIVACY_SECURITY,
+    SEARCH_ENGINE,
     LANGUAGES,
     THEME,
     DOWNLOADS,
@@ -55,6 +57,7 @@ fun SettingsFlow(
 
     LaunchedEffect(Unit) {
         LanguagePreferences.initialize(context)
+        SearchEnginePreferences.initialize(context)
     }
 
     BackHandler {
@@ -86,6 +89,7 @@ fun SettingsFlow(
                     defaultLanguage = defaultLanguage,
                     onNavigateBack = onExitSettings,
                     onOpenPrivacySecurity = { destination = SettingsDestination.PRIVACY_SECURITY },
+                    onOpenSearchEngine = { destination = SettingsDestination.SEARCH_ENGINE },
                     onOpenLanguages = { destination = SettingsDestination.LANGUAGES },
                     onOpenTheme = { destination = SettingsDestination.THEME },
                     onOpenDownloads = { destination = SettingsDestination.DOWNLOADS },
@@ -96,6 +100,11 @@ fun SettingsFlow(
                 PrivacySecuritySettingsScreen(
                     adBlockMode = adBlockMode,
                     onSelectAdBlockMode = onSelectAdBlockMode,
+                    onNavigateBack = { destination = SettingsDestination.MAIN }
+                )
+            }
+            SettingsDestination.SEARCH_ENGINE -> {
+                SearchEngineSettingsScreen(
                     onNavigateBack = { destination = SettingsDestination.MAIN }
                 )
             }

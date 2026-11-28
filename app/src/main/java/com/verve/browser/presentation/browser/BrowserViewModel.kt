@@ -1,5 +1,6 @@
 package com.verve.browser.presentation.browser
 
+import android.content.Context
 import android.net.Uri
 import androidx.compose.ui.graphics.Color
 import androidx.lifecycle.ViewModel
@@ -8,11 +9,11 @@ import com.verve.browser.data.local.PersistedSessionSnapshot
 import com.verve.browser.data.local.TabSessionStorage
 import com.verve.browser.domain.model.UrlCheckResult
 import com.verve.browser.domain.usecase.ShouldBlockUrlUseCase
+import com.verve.browser.presentation.browser.util.IncognitoSessionManager
 import com.verve.browser.presentation.browser.viewmodel.PageAppearanceAndProgressController
 import com.verve.browser.presentation.browser.viewmodel.SearchSuggestionsController
 import com.verve.browser.presentation.browser.viewmodel.TabSessionController
 import com.verve.browser.presentation.browser.viewmodel.ToolbarAndCurtainController
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -30,7 +31,8 @@ import kotlin.time.Duration.Companion.milliseconds
 @OptIn(FlowPreview::class)
 class BrowserViewModel(
     private val shouldBlockUrlUseCase: ShouldBlockUrlUseCase,
-    private val tabSessionStorage: TabSessionStorage
+    private val tabSessionStorage: TabSessionStorage,
+    private val appContext: Context? = null
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(BrowserUiState())
@@ -48,46 +50,56 @@ class BrowserViewModel(
 
     init {
         tabSessionStorage.loadSync()?.let { restored ->
-            val activeTab = restored.tabs.firstOrNull { it.id == restored.activeTabId } ?: restored.tabs.first()
-            _uiState.update { state ->
-                state.copy(
-                    tabs = restored.tabs,
-                    tabStacks = restored.tabStacks,
-                    activeTabId = activeTab.id,
-                    currentUrl = activeTab.url,
-                    searchInput = activeTab.url,
-                    siteSeedColor = activeTab.siteSeedColor,
-                    pendingSiteSeedColor = activeTab.siteSeedColor,
-                    topRegionColor = activeTab.topRegionColor,
-                    bottomRegionColor = activeTab.bottomRegionColor,
-                    blockedAdsCount = activeTab.blockedAdsCount
-                )
+            val nonIncognitoTabs = restored.tabs.filterNot { it.isIncognito }
+            if (nonIncognitoTabs.isNotEmpty()) {
+                val activeTab = nonIncognitoTabs.firstOrNull { it.id == restored.activeTabId }
+                    ?: nonIncognitoTabs.first()
+                _uiState.update { state ->
+                    state.copy(
+                        tabs = nonIncognitoTabs,
+                        tabStacks = restored.tabStacks,
+                        activeTabId = activeTab.id,
+                        currentUrl = activeTab.url,
+                        searchInput = activeTab.url,
+                        siteSeedColor = activeTab.siteSeedColor,
+                        pendingSiteSeedColor = activeTab.siteSeedColor,
+                        topRegionColor = activeTab.topRegionColor,
+                        bottomRegionColor = activeTab.bottomRegionColor,
+                        blockedAdsCount = activeTab.blockedAdsCount
+                    )
+                }
             }
         }
 
         viewModelScope.launch {
             _uiState
                 .map { state ->
+                    val nonIncognitoTabs = state.tabs
+                        .filter { !it.isIncognito }
+                        .filterNot { tab ->
+                            tab.url.startsWith("file://", ignoreCase = true) ||
+                                    (tab.activePdfUriString != null &&
+                                            !tab.url.startsWith("http://", ignoreCase = true) &&
+                                            !tab.url.startsWith("https://", ignoreCase = true))
+                        }
+                        .map { tab ->
+                            tab.copy(
+                                isMainFrameLoading = false,
+                                isLoading = false,
+                                loadingProgress = 0,
+                                activePdfUriString = null,
+                                activePdfTitle = null
+                            )
+                        }
+                    val resolvedActiveId = if (nonIncognitoTabs.any { it.id == state.activeTabId }) {
+                        state.activeTabId
+                    } else {
+                        nonIncognitoTabs.firstOrNull()?.id ?: BrowserUiState.INITIAL_TAB_ID
+                    }
                     PersistedSessionSnapshot(
-                        tabs = state.tabs
-                            .filter { !it.isIncognito }
-                            .filterNot { tab ->
-                                tab.url.startsWith("file://", ignoreCase = true) ||
-                                        (tab.activePdfUriString != null &&
-                                                !tab.url.startsWith("http://", ignoreCase = true) &&
-                                                !tab.url.startsWith("https://", ignoreCase = true))
-                            }
-                            .map { tab ->
-                                tab.copy(
-                                    isMainFrameLoading = false,
-                                    isLoading = false,
-                                    loadingProgress = 0,
-                                    activePdfUriString = null,
-                                    activePdfTitle = null
-                                )
-                            },
+                        tabs = nonIncognitoTabs,
                         tabStacks = state.tabStacks,
-                        activeTabId = state.activeTabId
+                        activeTabId = resolvedActiveId
                     )
                 }
                 .distinctUntilChanged()
@@ -96,6 +108,16 @@ class BrowserViewModel(
                     tabSessionStorage.save(snapshot)
                 }
         }
+    }
+
+    private fun syncIncognitoEnvironment() {
+        val ctx = appContext ?: return
+        val state = _uiState.value
+        IncognitoSessionManager.syncIncognitoTabsState(
+            context = ctx,
+            hasAnyIncognitoTab = state.tabs.any { it.isIncognito },
+            activeTabIsIncognito = state.isIncognito
+        )
     }
 
     fun openTabSwitcher() {
@@ -112,11 +134,13 @@ class BrowserViewModel(
     ): String {
         dismissQuickClosePrompt()
         searchSuggestionsController.cancelPendingSuggestions()
-        return tabSessionController.createNewTab(
+        val id = tabSessionController.createNewTab(
             initialUrl = initialUrl,
             isIncognito = isIncognito,
             stackId = stackId
         )
+        syncIncognitoEnvironment()
+        return id
     }
 
     fun openBlankTargetUrl(url: String, sourceTabId: String? = null) {
@@ -167,6 +191,7 @@ class BrowserViewModel(
         dismissQuickClosePrompt()
         searchSuggestionsController.cancelPendingSuggestions()
         tabSessionController.switchToTab(tabId)
+        syncIncognitoEnvironment()
     }
 
     fun closeTab(tabId: String, onTabClosed: (String) -> Unit = {}) {
@@ -174,6 +199,7 @@ class BrowserViewModel(
             dismissQuickClosePrompt()
         }
         tabSessionController.closeTab(tabId = tabId, onTabClosed = onTabClosed)
+        syncIncognitoEnvironment()
     }
 
     fun createTabStack(
@@ -196,6 +222,7 @@ class BrowserViewModel(
         tabSessionController.toggleStackCollapsed(stackId = stackId)
 
     fun toggleIncognito() {
+        searchSuggestionsController.cancelPendingSuggestions()
         _uiState.update { state ->
             val currentTab = state.activeTab ?: return@update state
             val nextIncognito = !currentTab.isIncognito
@@ -230,6 +257,7 @@ class BrowserViewModel(
                 isThemeExtracting = !nextIncognito && state.isThemeExtracting
             )
         }
+        syncIncognitoEnvironment()
     }
 
     fun onSearchFocusChanged(focused: Boolean) =

@@ -463,7 +463,10 @@ fun ExpressiveSearchPill(
                             color = contentColor
                         ),
                         cursorBrush = SolidColor(contentColor),
-                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                        keyboardOptions = KeyboardOptions(
+                            imeAction = ImeAction.Search,
+                            autoCorrectEnabled = !isIncognito
+                        ),
                         keyboardActions = KeyboardActions(
                             onSearch = { submitAction() },
                             onGo = { submitAction() },

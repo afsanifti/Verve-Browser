@@ -21,9 +21,11 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Checkbox
@@ -36,7 +38,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SegmentedListItem
 import androidx.compose.material3.SheetValue
@@ -72,8 +73,10 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import com.composables.icons.materialsymbols.MaterialSymbols
 import com.composables.icons.materialsymbols.rounded.Add
@@ -82,6 +85,7 @@ import com.composables.icons.materialsymbols.rounded.More_vert
 import com.verve.browser.data.preferences.LanguagePreferences
 import com.verve.browser.presentation.browser.util.PageTranslationManager
 import com.verve.browser.presentation.browser.util.TranslateLanguageOption
+import java.util.Locale
 
 private enum class LanguagePickerSheetType {
     APP_LANGUAGE,
@@ -689,6 +693,11 @@ private fun SingleLanguagePickerSheet(
             allowPartialDuringOpen || target != SheetValue.PartiallyExpanded
         }
     )
+    val deviceCode = remember {
+        Locale.getDefault().language
+            .uppercase(Locale.US)
+            .ifBlank { "OS" }
+    }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -724,14 +733,14 @@ private fun SingleLanguagePickerSheet(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
-            Spacer(modifier = Modifier.height(14.dp))
+            Spacer(modifier = Modifier.height(12.dp))
 
             LazyColumn(
                 modifier = Modifier
                     .fillMaxWidth()
                     .heightIn(max = 420.dp),
                 contentPadding = PaddingValues(bottom = 20.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp)
+                verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
                 if (includeDeviceDefaultOption) {
                     item(key = "__device_default__") {
@@ -739,34 +748,58 @@ private fun SingleLanguagePickerSheet(
                         Surface(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clip(RoundedCornerShape(16.dp))
+                                .clip(CircleShape)
                                 .clickable { onSelect(null) },
-                            shape = RoundedCornerShape(16.dp),
+                            shape = CircleShape,
                             color = if (isSelected) {
                                 MaterialTheme.colorScheme.secondaryContainer
                             } else {
-                                MaterialTheme.colorScheme.surfaceContainer
+                                MaterialTheme.colorScheme.surfaceContainerHighest
                             }
                         ) {
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(horizontal = 16.dp, vertical = 13.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.SpaceBetween
+                                    .padding(start = 18.dp, end = 22.dp, top = 16.dp, bottom = 16.dp),
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
+                                Box(
+                                    modifier = Modifier.width(34.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = deviceCode,
+                                        style = MaterialTheme.typography.labelLarge.copy(
+                                            fontSize = 13.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            letterSpacing = 0.5.sp
+                                        ),
+                                        color = if (isSelected) {
+                                            MaterialTheme.colorScheme.onSecondaryContainer
+                                        } else {
+                                            MaterialTheme.colorScheme.onSurfaceVariant
+                                        },
+                                        textAlign = TextAlign.Center,
+                                        maxLines = 1
+                                    )
+                                }
+
+                                Spacer(modifier = Modifier.width(12.dp))
+
                                 Text(
                                     text = "Current device language",
-                                    style = MaterialTheme.typography.bodyLarge.copy(
-                                        fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal
+                                    style = MaterialTheme.typography.titleMedium.copy(
+                                        fontWeight = FontWeight.SemiBold
                                     ),
                                     color = if (isSelected) {
                                         MaterialTheme.colorScheme.onSecondaryContainer
                                     } else {
                                         MaterialTheme.colorScheme.onSurface
-                                    }
+                                    },
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.weight(1f)
                                 )
-                                RadioButton(selected = isSelected, onClick = null)
                             }
                         }
                     }
@@ -774,50 +807,88 @@ private fun SingleLanguagePickerSheet(
 
                 items(items = customOptions, key = { it.code }) { option ->
                     val isSelected = selectedLanguage?.equals(option.displayName, ignoreCase = true) == true
+                    val shortCode = option.code
+                        .substringBefore('-')
+                        .uppercase(Locale.US)
+                    val showNativeSubtitle = option.nativeName.isNotBlank() &&
+                            !option.nativeName.equals(option.displayName, ignoreCase = true)
+
                     Surface(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clip(RoundedCornerShape(16.dp))
+                            .clip(CircleShape)
                             .clickable { onSelect(option.displayName) },
-                        shape = RoundedCornerShape(16.dp),
+                        shape = CircleShape,
                         color = if (isSelected) {
                             MaterialTheme.colorScheme.secondaryContainer
                         } else {
-                            MaterialTheme.colorScheme.surfaceContainer
+                            MaterialTheme.colorScheme.surfaceContainerHighest
                         }
                     ) {
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(horizontal = 16.dp, vertical = 13.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
+                                .padding(
+                                    start = 18.dp,
+                                    end = 22.dp,
+                                    top = if (showNativeSubtitle) 12.dp else 16.dp,
+                                    bottom = if (showNativeSubtitle) 12.dp else 16.dp
+                                ),
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Column {
+                            Box(
+                                modifier = Modifier.width(34.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = shortCode,
+                                    style = MaterialTheme.typography.labelLarge.copy(
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        letterSpacing = 0.5.sp
+                                    ),
+                                    color = if (isSelected) {
+                                        MaterialTheme.colorScheme.onSecondaryContainer
+                                    } else {
+                                        MaterialTheme.colorScheme.onSurfaceVariant
+                                    },
+                                    textAlign = TextAlign.Center,
+                                    maxLines = 1
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.width(12.dp))
+
+                            Column(modifier = Modifier.weight(1f)) {
                                 Text(
                                     text = option.displayName,
-                                    style = MaterialTheme.typography.bodyLarge.copy(
-                                        fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal
+                                    style = MaterialTheme.typography.titleMedium.copy(
+                                        fontWeight = FontWeight.SemiBold
                                     ),
                                     color = if (isSelected) {
                                         MaterialTheme.colorScheme.onSecondaryContainer
                                     } else {
                                         MaterialTheme.colorScheme.onSurface
-                                    }
+                                    },
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
                                 )
-                                Text(
-                                    text = option.nativeName,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = if (isSelected) {
-                                        MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.8f)
-                                    } else {
-                                        MaterialTheme.colorScheme.onSurfaceVariant
-                                    }
-                                )
-                            }
-
-                            if (selectedLanguage != null || includeDeviceDefaultOption) {
-                                RadioButton(selected = isSelected, onClick = null)
+                                if (showNativeSubtitle) {
+                                    Spacer(modifier = Modifier.height(1.dp))
+                                    Text(
+                                        text = option.nativeName,
+                                        style = MaterialTheme.typography.bodyMedium.copy(
+                                            fontSize = 13.sp
+                                        ),
+                                        color = if (isSelected) {
+                                            MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.85f)
+                                        } else {
+                                            MaterialTheme.colorScheme.onSurfaceVariant
+                                        },
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
                             }
                         }
                     }
@@ -891,9 +962,9 @@ private fun MultiLanguagePickerSheet(
 
                 Surface(
                     modifier = Modifier
-                        .clip(RoundedCornerShape(50))
+                        .clip(CircleShape)
                         .clickable { onSave(selectedList.toList()) },
-                    shape = RoundedCornerShape(50),
+                    shape = CircleShape,
                     color = MaterialTheme.colorScheme.primary
                 ) {
                     Text(
@@ -905,17 +976,22 @@ private fun MultiLanguagePickerSheet(
                 }
             }
 
-            Spacer(modifier = Modifier.height(14.dp))
+            Spacer(modifier = Modifier.height(12.dp))
 
             LazyColumn(
                 modifier = Modifier
                     .fillMaxWidth()
                     .heightIn(max = 420.dp),
                 contentPadding = PaddingValues(bottom = 20.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp)
+                verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
                 items(items = PageTranslationManager.supportedLanguages, key = { it.code }) { option ->
                     val checked = selectedList.any { it.equals(option.displayName, ignoreCase = true) }
+                    val shortCode = option.code
+                        .substringBefore('-')
+                        .uppercase(Locale.US)
+                    val showNativeSubtitle = option.nativeName.isNotBlank() &&
+                            !option.nativeName.equals(option.displayName, ignoreCase = true)
                     val toggle: () -> Unit = {
                         if (checked) {
                             selectedList.removeAll { it.equals(option.displayName, ignoreCase = true) }
@@ -927,43 +1003,79 @@ private fun MultiLanguagePickerSheet(
                     Surface(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clip(RoundedCornerShape(16.dp))
+                            .clip(CircleShape)
                             .clickable(onClick = toggle),
-                        shape = RoundedCornerShape(16.dp),
+                        shape = CircleShape,
                         color = if (checked) {
                             MaterialTheme.colorScheme.secondaryContainer
                         } else {
-                            MaterialTheme.colorScheme.surfaceContainer
+                            MaterialTheme.colorScheme.surfaceContainerHighest
                         }
                     ) {
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(horizontal = 16.dp, vertical = 11.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
+                                .padding(
+                                    start = 18.dp,
+                                    end = 14.dp,
+                                    top = if (showNativeSubtitle) 10.dp else 14.dp,
+                                    bottom = if (showNativeSubtitle) 10.dp else 14.dp
+                                ),
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Column {
+                            Box(
+                                modifier = Modifier.width(34.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = shortCode,
+                                    style = MaterialTheme.typography.labelLarge.copy(
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        letterSpacing = 0.5.sp
+                                    ),
+                                    color = if (checked) {
+                                        MaterialTheme.colorScheme.onSecondaryContainer
+                                    } else {
+                                        MaterialTheme.colorScheme.onSurfaceVariant
+                                    },
+                                    textAlign = TextAlign.Center,
+                                    maxLines = 1
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.width(12.dp))
+
+                            Column(modifier = Modifier.weight(1f)) {
                                 Text(
                                     text = option.displayName,
-                                    style = MaterialTheme.typography.bodyLarge.copy(
-                                        fontWeight = if (checked) FontWeight.SemiBold else FontWeight.Normal
+                                    style = MaterialTheme.typography.titleMedium.copy(
+                                        fontWeight = FontWeight.SemiBold
                                     ),
                                     color = if (checked) {
                                         MaterialTheme.colorScheme.onSecondaryContainer
                                     } else {
                                         MaterialTheme.colorScheme.onSurface
-                                    }
+                                    },
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
                                 )
-                                Text(
-                                    text = option.nativeName,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = if (checked) {
-                                        MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.8f)
-                                    } else {
-                                        MaterialTheme.colorScheme.onSurfaceVariant
-                                    }
-                                )
+                                if (showNativeSubtitle) {
+                                    Spacer(modifier = Modifier.height(1.dp))
+                                    Text(
+                                        text = option.nativeName,
+                                        style = MaterialTheme.typography.bodyMedium.copy(
+                                            fontSize = 13.sp
+                                        ),
+                                        color = if (checked) {
+                                            MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.85f)
+                                        } else {
+                                            MaterialTheme.colorScheme.onSurfaceVariant
+                                        },
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
                             }
 
                             Checkbox(

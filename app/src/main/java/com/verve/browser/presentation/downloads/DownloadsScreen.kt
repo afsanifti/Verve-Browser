@@ -49,6 +49,7 @@ fun DownloadsRoute(
     onOpenUrl: (String) -> Unit = {}
 ) {
     val context = LocalContext.current
+    VerveDownloadManager.initialize(context)
     val downloads by VerveDownloadManager.downloads.collectAsState()
 
     DownloadsScreen(

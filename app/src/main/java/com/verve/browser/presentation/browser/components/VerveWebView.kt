@@ -8,6 +8,7 @@ import android.webkit.WebView
 import android.widget.FrameLayout
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -20,6 +21,7 @@ import com.verve.browser.data.network.QuicNetworkManager
 import com.verve.browser.presentation.browser.BrowserViewModel
 import com.verve.browser.presentation.browser.components.webview.AdBlockWebViewHelper
 import com.verve.browser.presentation.browser.components.webview.createTabWebView
+import com.verve.browser.presentation.browser.util.IncognitoSessionManager
 import com.verve.browser.presentation.browser.util.TabThumbnailCache
 import com.verve.browser.presentation.browser.util.TabWebViewPool
 import com.verve.browser.presentation.browser.util.WebViewThemeSync
@@ -41,9 +43,13 @@ fun VerveWebView(
     onDownloadStarted: (DownloadItem) -> Unit = {}
 ) {
     var attachedTabId by remember { mutableStateOf("") }
+    var lastConfiguredIncognito by remember { mutableStateOf<Boolean?>(null) }
     val latestOnDownloadStarted by rememberUpdatedState(onDownloadStarted)
     val latestOnShowCustomView by rememberUpdatedState(onShowCustomView)
     val latestOnHideCustomView by rememberUpdatedState(onHideCustomView)
+
+    val uiState by viewModel.uiState.collectAsState()
+    val isTabIncognito = uiState.tabs.firstOrNull { it.id == tabId }?.isIncognito ?: uiState.isIncognito
 
     val themeConfig = rememberThemeConfig()
     val isSystemDark = isSystemInDarkTheme()
@@ -87,6 +93,10 @@ fun VerveWebView(
                         setSupportMultipleWindows(true)
                         javaScriptCanOpenWindowsAutomatically = true
                     }
+                    IncognitoSessionManager.configureWebView(
+                        webView = createdWebView,
+                        isIncognito = isTabIncognito
+                    )
                     AdBlockWebViewHelper.installCosmeticAndScriptletEngine(
                         webView = createdWebView,
                         tabId = tabId,
@@ -98,6 +108,14 @@ fun VerveWebView(
                         onDownloadStarted = { item -> latestOnDownloadStarted(item) }
                     )
                 }
+            }
+
+            if (attachedTabId != tabId || lastConfiguredIncognito != isTabIncognito) {
+                IncognitoSessionManager.configureWebView(
+                    webView = targetWebView,
+                    isIncognito = isTabIncognito
+                )
+                lastConfiguredIncognito = isTabIncognito
             }
 
             WebViewThemeSync.applyToWebView(targetWebView, isDarkTheme)
@@ -138,6 +156,7 @@ fun VerveWebView(
             }
             hostContainer.removeAllViews()
             attachedTabId = ""
+            lastConfiguredIncognito = null
         }
     )
 }

@@ -6,6 +6,7 @@ import android.webkit.URLUtil
 import android.webkit.WebView
 import androidx.core.net.toUri
 import com.verve.browser.data.network.QuicNetworkManager
+import com.verve.browser.presentation.downloads.DownloadFileType
 import com.verve.browser.presentation.downloads.DownloadItem
 import com.verve.browser.presentation.downloads.DownloadStatus
 import com.verve.browser.presentation.downloads.inferDownloadFileType
@@ -18,8 +19,13 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import org.json.JSONArray
+import org.json.JSONObject
 
 object VerveDownloadManager {
+
+    private const val PREFS_NAME = "verve_downloads_history_prefs"
+    private const val KEY_DOWNLOAD_ITEMS = "saved_download_items_v1"
 
     private val _downloads = MutableStateFlow<List<DownloadItem>>(emptyList())
     val downloads: StateFlow<List<DownloadItem>> = _downloads.asStateFlow()
@@ -29,14 +35,31 @@ object VerveDownloadManager {
 
     private val inlinePdfHandlers = WeakHashMap<WebView, (Uri, String, String) -> Unit>()
 
+    @Volatile
+    private var appContextRef: Context? = null
+
+    @Volatile
+    private var initialized = false
+
     private val networkExecutor = DownloadNetworkExecutor(
         onUpdateItem = ::updateItem,
         onRemoveItem = { itemId ->
-            _downloads.update { list -> list.filterNot { it.id == itemId } }
+            mutateDownloads { list -> list.filterNot { it.id == itemId } }
         },
         onRecordFailed = ::recordFailedDownload,
         onEnqueueFallback = ::enqueueDownload
     )
+
+    fun initialize(context: Context) {
+        val appContext = context.applicationContext
+        appContextRef = appContext
+        if (initialized) return
+        synchronized(this) {
+            if (initialized) return
+            _downloads.value = loadPersistedDownloads(appContext)
+            initialized = true
+        }
+    }
 
     fun registerInlinePdfHandler(
         webView: WebView,
@@ -61,6 +84,7 @@ object VerveDownloadManager {
         onInlinePdfReady: ((Uri, String) -> Unit)? = null
     ) {
         val appContext = context.applicationContext
+        initialize(appContext)
         if (onInlinePdfReady != null) {
             registerInlinePdfHandler(webView, onInlinePdfReady)
         }
@@ -121,6 +145,7 @@ object VerveDownloadManager {
         isPostRequest: Boolean = true
     ): DownloadItem? {
         val appContext = context.applicationContext
+        initialize(appContext)
         val safeName = DownloadResponseValidator.sanitizeFileName(fileName)
         val resolvedMime = DownloadResponseValidator.resolveMimeType(safeName, mimeType)
 
@@ -174,7 +199,7 @@ object VerveDownloadManager {
                 contentUri = targetUri.toString(),
                 isPostRequest = isPostRequest
             )
-            _downloads.update { current -> listOf(item) + current }
+            mutateDownloads { current -> listOf(item) + current }
             _downloadStartedEvents.tryEmit(item)
             item
         }.getOrNull()
@@ -186,6 +211,7 @@ object VerveDownloadManager {
         fileName: String
     ): DownloadItem? {
         val appContext = context.applicationContext
+        initialize(appContext)
         val safeName = DownloadResponseValidator.sanitizeFileName(fileName)
         val entry = DownloadMediaStoreHelper.insertDownload(
             context = appContext,
@@ -221,7 +247,7 @@ object VerveDownloadManager {
                 mimeType = "application/pdf",
                 contentUri = targetUri.toString()
             )
-            _downloads.update { current -> listOf(item) + current }
+            mutateDownloads { current -> listOf(item) + current }
             _downloadStartedEvents.tryEmit(item)
             item
         }.getOrNull()
@@ -249,7 +275,7 @@ object VerveDownloadManager {
             isPostRequest = isPostRequest,
             errorMessage = errorMessage
         )
-        _downloads.update { current -> listOf(item) + current }
+        mutateDownloads { current -> listOf(item) + current }
         _downloadStartedEvents.tryEmit(item)
         return item
     }
@@ -264,6 +290,7 @@ object VerveDownloadManager {
         contentLength: Long = -1L
     ): DownloadItem {
         val appContext = context.applicationContext
+        initialize(appContext)
         QuicNetworkManager.initialize(appContext)
 
         val guessedFileName = DownloadResponseValidator.sanitizeFileName(
@@ -294,7 +321,7 @@ object VerveDownloadManager {
             errorMessage = if (entry.contentUri == null) "Unable to create file in Downloads" else null
         )
 
-        _downloads.update { current -> listOf(initialItem) + current }
+        mutateDownloads { current -> listOf(initialItem) + current }
         _downloadStartedEvents.tryEmit(initialItem)
 
         if (entry.contentUri != null) {
@@ -311,6 +338,8 @@ object VerveDownloadManager {
     }
 
     fun togglePauseResume(context: Context, itemId: String) {
+        val appContext = context.applicationContext
+        initialize(appContext)
         val item = _downloads.value.find { it.id == itemId } ?: return
         when (item.status) {
             DownloadStatus.DOWNLOADING -> {
@@ -322,7 +351,6 @@ object VerveDownloadManager {
             DownloadStatus.PAUSED, DownloadStatus.FAILED -> {
                 if (item.isPostRequest && item.status == DownloadStatus.FAILED) return
 
-                val appContext = context.applicationContext
                 val existingUri = item.contentUri?.let(Uri::parse)
                 val targetUri = existingUri ?: DownloadMediaStoreHelper.insertDownload(
                     context = appContext,
@@ -352,11 +380,13 @@ object VerveDownloadManager {
     }
 
     fun cancelDownload(context: Context, itemId: String) {
+        val appContext = context.applicationContext
+        initialize(appContext)
         networkExecutor.cancelRequest(itemId)
         val removed = _downloads.value.find { it.id == itemId }
-        _downloads.update { list -> list.filterNot { it.id == itemId } }
+        mutateDownloads { list -> list.filterNot { it.id == itemId } }
         removed?.contentUri?.let { uriString ->
-            DownloadMediaStoreHelper.deleteEntry(context.applicationContext, uriString.toUri())
+            DownloadMediaStoreHelper.deleteEntry(appContext, uriString.toUri())
         }
     }
 
@@ -366,8 +396,9 @@ object VerveDownloadManager {
 
     fun clearCompleted(context: Context) {
         val appContext = context.applicationContext
+        initialize(appContext)
         val completed = _downloads.value.filterNot { it.isInProgress }
-        _downloads.update { list -> list.filter { it.isInProgress } }
+        mutateDownloads { list -> list.filter { it.isInProgress } }
         completed.forEach { item ->
             item.contentUri?.let { uriString ->
                 DownloadMediaStoreHelper.deleteEntry(appContext, uriString.toUri())
@@ -376,11 +407,106 @@ object VerveDownloadManager {
     }
 
     private fun updateItem(itemId: String, transform: (DownloadItem) -> DownloadItem) {
-        _downloads.update { currentList ->
+        mutateDownloads { currentList ->
             currentList.map { existing ->
                 if (existing.id == itemId) transform(existing) else existing
             }
         }
+    }
+
+    private fun mutateDownloads(transform: (List<DownloadItem>) -> List<DownloadItem>) {
+        var updatedSnapshot: List<DownloadItem> = emptyList()
+        _downloads.update { current ->
+            updatedSnapshot = transform(current)
+            updatedSnapshot
+        }
+        persistDownloads(updatedSnapshot)
+    }
+
+    private fun persistDownloads(items: List<DownloadItem>) {
+        val ctx = appContextRef ?: return
+        runCatching {
+            val jsonArray = JSONArray()
+            items.forEach { item ->
+                val obj = JSONObject().apply {
+                    put("id", item.id)
+                    put("fileName", item.fileName)
+                    put("domain", item.domain)
+                    put("url", item.url)
+                    put("downloadedBytes", item.downloadedBytes)
+                    put("totalBytes", item.totalBytes)
+                    put("status", item.status.name)
+                    put("fileType", item.fileType.name)
+                    put("dateGroup", item.dateGroup)
+                    put("mimeType", item.mimeType)
+                    if (item.negotiatedProtocol != null) put("negotiatedProtocol", item.negotiatedProtocol)
+                    if (item.contentUri != null) put("contentUri", item.contentUri)
+                    if (item.refererUrl != null) put("refererUrl", item.refererUrl)
+                    if (item.userAgent != null) put("userAgent", item.userAgent)
+                    put("isPostRequest", item.isPostRequest)
+                    if (item.errorMessage != null) put("errorMessage", item.errorMessage)
+                }
+                jsonArray.put(obj)
+            }
+            ctx.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                .edit()
+                .putString(KEY_DOWNLOAD_ITEMS, jsonArray.toString())
+                .apply()
+        }
+    }
+
+    private fun loadPersistedDownloads(context: Context): List<DownloadItem> {
+        val raw = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getString(KEY_DOWNLOAD_ITEMS, null)
+            ?.takeIf { it.isNotBlank() }
+            ?: return emptyList()
+
+        return runCatching {
+            val array = JSONArray(raw)
+            buildList {
+                for (i in 0 until array.length()) {
+                    val obj = array.optJSONObject(i) ?: continue
+                    val rawStatus = runCatching {
+                        DownloadStatus.valueOf(obj.optString("status", DownloadStatus.COMPLETED.name))
+                    }.getOrDefault(DownloadStatus.COMPLETED)
+
+                    // Any active download interrupted by app restart becomes PAUSED so the user can resume it
+                    val restoredStatus = if (rawStatus == DownloadStatus.DOWNLOADING) {
+                        DownloadStatus.PAUSED
+                    } else {
+                        rawStatus
+                    }
+
+                    val fileName = obj.optString("fileName").ifBlank { continue }
+                    val mimeType = obj.optString("mimeType", "*/*")
+                    val fileType = runCatching {
+                        DownloadFileType.valueOf(obj.optString("fileType"))
+                    }.getOrDefault(inferDownloadFileType(fileName, mimeType))
+
+                    add(
+                        DownloadItem(
+                            id = obj.optString("id").ifBlank { UUID.randomUUID().toString() },
+                            fileName = fileName,
+                            domain = obj.optString("domain", "web"),
+                            url = obj.optString("url", ""),
+                            downloadedBytes = obj.optLong("downloadedBytes", 0L),
+                            totalBytes = obj.optLong("totalBytes", 0L),
+                            status = restoredStatus,
+                            fileType = fileType,
+                            dateGroup = obj.optString("dateGroup", "Earlier"),
+                            remainingSeconds = null,
+                            mimeType = mimeType,
+                            negotiatedProtocol = obj.optString("negotiatedProtocol").takeIf { it.isNotBlank() },
+                            contentUri = obj.optString("contentUri").takeIf { it.isNotBlank() },
+                            refererUrl = obj.optString("refererUrl").takeIf { it.isNotBlank() },
+                            userAgent = obj.optString("userAgent").takeIf { it.isNotBlank() },
+                            isPostRequest = obj.optBoolean("isPostRequest", false),
+                            errorMessage = obj.optString("errorMessage").takeIf { it.isNotBlank() }
+                        )
+                    )
+                }
+            }
+        }.getOrDefault(emptyList())
     }
 
     private fun extractDomain(url: String): String {
